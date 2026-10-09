@@ -1,0 +1,18 @@
+[
+  {
+    "id": "all_enabled",
+    "name": "All Addons Enabled",
+    "description": "Enables every installed addon for full sandbox fun.",
+    "addonIds": [
+      "*"
+    ],
+    "created": "2026-10-09T19:25:41.371Z"
+  },
+  {
+    "id": "vanilla",
+    "name": "Pure Vanilla (Clean)",
+    "description": "Disables all addons for clean gameplay and maximum performance.",
+    "addonIds": [],
+    "created": "2026-10-09T19:25:41.371Z"
+  }
+]

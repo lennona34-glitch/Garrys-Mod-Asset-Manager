@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Local cache & data
+data/workshop_details_cache.json
+data/thumbnails/*.png
+!data/thumbnails/.gitkeep
+
+# User and Environment
+.env
+.env.local
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Electron and Build outputs
+dist/
+build/
+out/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

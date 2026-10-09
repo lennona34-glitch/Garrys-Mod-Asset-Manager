@@ -1,0 +1,26 @@
+{
+  "name": "garrys-mod-asset-manager",
+  "version": "1.0.0",
+  "description": "Garry's Mod Map and Asset Manager for Windows",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lennona34-glitch/Garrys-Mod-Asset-Manager.git"
+  },
+  "keywords": [
+    "garrys-mod",
+    "gmod",
+    "addon-manager",
+    "map-manager",
+    "navmesh",
+    "electron"
+  ],
+  "author": "lennona34-glitch",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.7.0"
+  }
+}
