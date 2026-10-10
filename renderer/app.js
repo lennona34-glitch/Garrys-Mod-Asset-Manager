@@ -42,12 +42,83 @@ function showToast(message, type = 'info') {
     }, 3500);
 }
 
+function updateNavmeshLiveProgress({ mapName, percent, phase }) {
+    let banner = document.getElementById('navmeshLiveBanner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'navmeshLiveBanner';
+        banner.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #111827;
+            border: 1px solid #38bdf8;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6), 0 0 15px rgba(56, 189, 248, 0.3);
+            border-radius: 10px;
+            padding: 14px 18px;
+            color: #f3f4f6;
+            z-index: 10000;
+            min-width: 320px;
+            max-width: 420px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            transition: all 0.3s ease;
+        `;
+        document.body.appendChild(banner);
+    }
+
+    const isComplete = percent >= 100;
+    const accentColor = isComplete ? '#34d399' : '#38bdf8';
+    if (isComplete) {
+        banner.style.borderColor = '#34d399';
+        banner.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.6), 0 0 15px rgba(52, 211, 153, 0.3)';
+    }
+
+    banner.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: ${accentColor};">
+                ${isComplete ? '<span>✅</span>' : '<span class="spinner" style="width: 14px; height: 14px; border: 2px solid #38bdf8; border-top-color: transparent; border-radius: 50%; display: inline-block;"></span>'}
+                <span>${isComplete ? 'NavMesh Generation Complete' : 'Generating NavMesh in GMod'}</span>
+            </div>
+            <span style="font-size: 0.85rem; font-weight: 700; color: ${accentColor};">${percent}%</span>
+        </div>
+        <div style="font-size: 0.85rem; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            Map: <strong style="color: #f3f4f6;">${mapName}</strong>
+        </div>
+        <div style="font-size: 0.8rem; color: #d1d5db;">
+            ${phase || 'Working in background...'}
+        </div>
+        <div style="width: 100%; height: 6px; background: #374151; border-radius: 3px; overflow: hidden; margin-top: 2px;">
+            <div style="width: ${percent}%; height: 100%; background: ${isComplete ? '#34d399' : 'linear-gradient(90deg, #38bdf8, #818cf8)'}; transition: width 0.3s ease;"></div>
+        </div>
+    `;
+
+    if (isComplete) {
+        setTimeout(() => {
+            const b = document.getElementById('navmeshLiveBanner');
+            if (b) {
+                b.style.opacity = '0';
+                b.style.transform = 'translateY(10px)';
+                setTimeout(() => b.remove(), 400);
+            }
+        }, 5000);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     setupTabNavigation();
     setupEventHandlers();
 
+    if (window.api.onNavmeshProgress) {
+        window.api.onNavmeshProgress((data) => {
+            updateNavmeshLiveProgress(data);
+        });
+    }
+
     if (window.api.onNavmeshCompleted) {
         window.api.onNavmeshCompleted(async (mapName) => {
+            updateNavmeshLiveProgress({ mapName, percent: 100, phase: '✅ Complete! Saved to garrysmod/maps/' });
             showToast(`🎉 NavMesh Complete! ${mapName}.nav generated and permanently saved.`, 'success');
             await Promise.all([refreshMaps(), refreshDiagnostics()]);
         });

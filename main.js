@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+app.disableHardwareAcceleration();
 const path = require('path');
 const fs = require('fs');
 
@@ -222,20 +223,80 @@ ipcMain.handle('generate-map-navmesh', async (event, mapName) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     injectNavmeshAutopilot(currentGmodInfo, mapName);
 
-    // Watch for .nav creation in background
+    // Watch for .nav creation and stream live percentage progress from console.log
     if (currentGmodInfo.mapsDir) {
         const targetNav = path.join(currentGmodInfo.mapsDir, `${mapName}.nav`);
+        const logPath = currentGmodInfo.garrysmodDir ? path.join(currentGmodInfo.garrysmodDir, 'console.log') : null;
+        let lastPercent = null;
+        let lastPhase = null;
         const startTime = Date.now();
+
         const checkInterval = setInterval(() => {
+            // Check if .nav file exists
             if (fs.existsSync(targetNav)) {
                 clearInterval(checkInterval);
                 if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('navmesh-progress', {
+                        mapName,
+                        percent: 100,
+                        phase: 'Complete! NavMesh saved successfully.'
+                    });
                     mainWindow.webContents.send('navmesh-completed', mapName);
                 }
-            } else if (Date.now() - startTime > 300000) {
+                return;
+            }
+
+            // Tail console.log for percentage
+            if (logPath && fs.existsSync(logPath)) {
+                try {
+                    const fd = fs.openSync(logPath, 'r');
+                    const stats = fs.fstatSync(fd);
+                    const readLen = Math.min(stats.size, 3072);
+                    const buf = Buffer.alloc(readLen);
+                    fs.readSync(fd, buf, 0, readLen, Math.max(0, stats.size - readLen));
+                    fs.closeSync(fd);
+                    const text = buf.toString('utf8');
+
+                    const matchPercent = text.match(/Computing mesh visibility\.\.\.\s*(\d+)%/g);
+                    if (matchPercent && matchPercent.length > 0) {
+                        const lastMatch = matchPercent[matchPercent.length - 1];
+                        const pNum = lastMatch.match(/(\d+)%/);
+                        if (pNum && pNum[1] !== lastPercent) {
+                            lastPercent = pNum[1];
+                            if (mainWindow && !mainWindow.isDestroyed()) {
+                                mainWindow.webContents.send('navmesh-progress', {
+                                    mapName,
+                                    percent: parseInt(lastPercent, 10),
+                                    phase: `Computing visibility... ${lastPercent}%`
+                                });
+                            }
+                        }
+                    } else if (text.includes('Sampling walkable space') && lastPhase !== 'sampling') {
+                        lastPhase = 'sampling';
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send('navmesh-progress', {
+                                mapName,
+                                percent: 5,
+                                phase: 'Sampling walkable space...'
+                            });
+                        }
+                    } else if ((text.includes('Generation complete') || text.includes('Optimizing mesh visibility')) && lastPhase !== 'finalizing') {
+                        lastPhase = 'finalizing';
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send('navmesh-progress', {
+                                mapName,
+                                percent: 99,
+                                phase: 'Finalizing mesh & saving...'
+                            });
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            if (Date.now() - startTime > 450000) {
                 clearInterval(checkInterval);
             }
-        }, 1500);
+        }, 1200);
     }
 
     return await launchMap(currentGmodInfo, mapName, { extraArgs: '+sv_cheats 1 +nav_quicksave 1' });

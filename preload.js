@@ -43,5 +43,6 @@ contextBridge.exposeInMainWorld('api', {
     undoAddonConflict: (conflictKey) => ipcRenderer.invoke('undo-addon-conflict', conflictKey),
     generateMapNavmesh: (mapName) => ipcRenderer.invoke('generate-map-navmesh', mapName),
     subscribeMissingBases: (workshopIds) => ipcRenderer.invoke('subscribe-missing-bases', workshopIds),
-    onNavmeshCompleted: (callback) => ipcRenderer.on('navmesh-completed', (_event, mapName) => callback(mapName))
+    onNavmeshCompleted: (callback) => ipcRenderer.on('navmesh-completed', (_event, mapName) => callback(mapName)),
+    onNavmeshProgress: (callback) => ipcRenderer.on('navmesh-progress', (_event, data) => callback(data))
 });

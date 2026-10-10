@@ -179,7 +179,7 @@ function extractSingleFile(gmaPath, internalFilePath, destinationPath) {
     const fdIn = fs.openSync(gmaPath, 'r');
     const fdOut = fs.openSync(destinationPath, 'w');
 
-    const CHUNK_SIZE = 64 * 1024;
+    const CHUNK_SIZE = 1024 * 1024;
     const buf = Buffer.alloc(CHUNK_SIZE);
     let bytesRemaining = target.size;
     let readPos = target.offset;
@@ -210,7 +210,7 @@ function extractAllPureJs(gmaPath, outputDir) {
 
     fs.mkdirSync(outputDir, { recursive: true });
     const fdIn = fs.openSync(gmaPath, 'r');
-    const CHUNK_SIZE = 64 * 1024;
+    const CHUNK_SIZE = 1024 * 1024;
     const buf = Buffer.alloc(CHUNK_SIZE);
 
     try {
