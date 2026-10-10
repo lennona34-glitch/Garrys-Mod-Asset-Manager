@@ -53,6 +53,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Auto-refresh maps and diagnostics whenever the user switches back to the app window
+    window.addEventListener('focus', async () => {
+        if (state.gmodInfo && state.gmodInfo.gmodRoot) {
+            await Promise.all([refreshMaps(), refreshDiagnostics()]);
+        }
+    });
+
     await loadInitialData();
 });
 

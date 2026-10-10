@@ -137,7 +137,11 @@ async function scanAllMaps(gmodInfo) {
             for (const mapEntry of header.maps) {
                 const mapName = mapEntry.mapName;
                 const classification = classifyMap(mapName);
-                const hasNav = header.navMeshes && header.navMeshes.includes(mapName);
+                
+                // Check if navmesh exists inside GMA or natively on disk
+                const nativeNavPath = gmodInfo.mapsDir ? path.join(gmodInfo.mapsDir, `${mapName}.nav`) : null;
+                const hasNav = (nativeNavPath && fs.existsSync(nativeNavPath)) ||
+                               Boolean(header.navMeshes && header.navMeshes.includes(mapName));
 
                 // Look for embedded map thumbnail inside GMA (e.g. maps/thumb/<map>.png, maps/<map>.png)
                 let internalThumbnail = null;
@@ -194,7 +198,38 @@ async function scanAllMaps(gmodInfo) {
         }
     }
 
-    return maps;
+    // Unified deduplication: merge loose BSPs and GMA maps by unique mapName
+    const unifiedMaps = new Map();
+    for (const m of maps) {
+        const key = m.mapName.toLowerCase();
+
+        // Double check native .nav file on disk
+        if (gmodInfo.mapsDir) {
+            const diskNav = path.join(gmodInfo.mapsDir, `${m.mapName}.nav`);
+            if (fs.existsSync(diskNav)) {
+                m.hasNav = true;
+            }
+        }
+
+        if (!unifiedMaps.has(key)) {
+            unifiedMaps.set(key, m);
+        } else {
+            const existing = unifiedMaps.get(key);
+            // Merge properties from GMA and loose files
+            if (!existing.thumbnail && m.thumbnail) existing.thumbnail = m.thumbnail;
+            if (m.hasNav) existing.hasNav = true;
+            if (!existing.workshopId && m.workshopId) existing.workshopId = m.workshopId;
+            if (!existing.parentAddon && m.parentAddon) existing.parentAddon = m.parentAddon;
+            if (existing.source === 'loose' && m.source === 'workshop_gma') {
+                existing.displayName = m.displayName;
+                existing.internalMapPath = m.internalMapPath;
+                existing.filePath = m.filePath;
+                existing.totalAddonSize = m.totalAddonSize;
+            }
+        }
+    }
+
+    return Array.from(unifiedMaps.values());
 }
 
 /**
@@ -353,12 +388,13 @@ hook.Add("PlayerInitialSpawn", "AutoNavmeshAutopilot", function(ply)
 
         timer.Simple(2.5, function()
             if not IsValid(ply) then return end
-            PrintMessage(HUD_PRINTCENTER, "AutoNav: Generating NavMesh... Do not touch your PC for ~45s!")
+            PrintMessage(HUD_PRINTCENTER, "AutoNav: Generating Fast NavMesh... Please wait ~3s!")
             ply:SendLua([[
                 surface.PlaySound("buttons/bell1.wav")
-                notification.AddLegacy("AutoNav: Starting mesh calculation... Please wait ~45s", NOTIFY_HINT, 6)
+                notification.AddLegacy("AutoNav: Fast NavMesh calculation starting...", NOTIFY_HINT, 5)
+                RunConsoleCommand("nav_quicksave", "1")
             ]])
-            game.ConsoleCommand("sv_cheats 1\\n")
+            game.ConsoleCommand("nav_quicksave 1\\n")
             game.ConsoleCommand("nav_mark_walkable\\n")
             game.ConsoleCommand("nav_generate\\n")
         end)
