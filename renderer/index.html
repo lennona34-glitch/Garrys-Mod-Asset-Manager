@@ -331,12 +331,20 @@
                             </label>
                         </div>
                         <div class="form-group" style="margin-top: 15px;">
+                            <label>Display Resolution (RTX 4060 Optimized):</label>
+                            <select id="optResolution" style="width: 100%; background: #131b26; border: 1px solid rgba(255,255,255,0.12); color: #f8fafc; padding: 9px 12px; border-radius: 6px; font-size: 13px; font-family: inherit;">
+                                <option value="2560x1440" selected>1440p QHD (2560 x 1440) - Crisp & Ultra Fast</option>
+                                <option value="3840x2160">Native 4K (3840 x 2160) - Matches your 120Hz 4K Display</option>
+                                <option value="1920x1080">1080p FHD (1920 x 1080) - Standard</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-top: 15px;">
                             <label>Default Gamemode for Launch:</label>
                             <input type="text" id="optDefaultGamemode" value="sandbox" placeholder="sandbox, terrortown, darkrp...">
                         </div>
                         <div class="form-group">
                             <label>Custom Launch Arguments:</label>
-                            <input type="text" id="optExtraArgs" placeholder="-w 1920 -h 1080 +sv_lan 1">
+                            <input type="text" id="optExtraArgs" placeholder="+sv_lan 1">
                         </div>
                     </div>
 

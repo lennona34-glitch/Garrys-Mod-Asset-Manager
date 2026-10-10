@@ -614,9 +614,21 @@ function launchSelectedMap(mapName) {
     const windowed = document.getElementById('optWindowed').checked;
     const gamemode = document.getElementById('optDefaultGamemode').value || 'sandbox';
     const extraArgs = document.getElementById('optExtraArgs').value || '';
+    const resEl = document.getElementById('optResolution');
+    const resVal = resEl ? resEl.value : '2560x1440';
 
-    showToast(`Launching Garry's Mod directly into ${mapName}...`, 'info');
-    window.api.launchMap(mapName, { novid, noworkshop, windowed, gamemode, extraArgs })
+    if (resEl) {
+        try { localStorage.setItem('gmod_preferred_res', resVal); } catch (_) {}
+    }
+
+    let width = 2560;
+    let height = 1440;
+    if (resVal === '3840x2160') { width = 3840; height = 2160; }
+    else if (resVal === '2560x1440') { width = 2560; height = 1440; }
+    else if (resVal === '1920x1080') { width = 1920; height = 1080; }
+
+    showToast(`Launching Garry's Mod directly into ${mapName} (${width}x${height})...`, 'info');
+    window.api.launchMap(mapName, { novid, noworkshop, windowed, width, height, gamemode, extraArgs })
         .then(() => showToast(`Garry's Mod launched with map: ${mapName}!`, 'success'))
         .catch(err => showToast(`Launch failed: ${err.message}`, 'error'));
 }
