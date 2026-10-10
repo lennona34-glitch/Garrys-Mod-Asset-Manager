@@ -20,9 +20,10 @@ const KNOWN_BASES = {
         workshopId: '131759821',
         description: 'Required by VJ SNPCs, monster packs, and custom creature entities',
         keywords: ['vj_base', 'npc_vj_'],
+        searchQuery: 'VJ Base',
+        searchTag: 'NPC',
         recommendedPacks: [
-            { title: 'VJ Base Zombie SNPCs', workshopId: '140130689', desc: 'Classic horde zombies, fast zombies, and poison zombies' },
-            { title: 'VJ Base Military SNPCs', workshopId: '144721464', desc: 'Tactical soldiers with squad callouts, flanking AI, and grenades' }
+            { title: 'Metropolice Pack (VJ Base)', workshopId: '104491619', desc: 'Tactical Combine police with voice lines, squad AI, and stun batons' }
         ]
     },
     'tfa': {
@@ -30,9 +31,12 @@ const KNOWN_BASES = {
         workshopId: '2840031720',
         description: 'Required by TFA weapons, firearms, and SWEPs',
         keywords: ['tfa_gun_base'],
+        searchQuery: 'TFA',
+        searchTag: 'Weapon',
         recommendedPacks: [
-            { title: 'TFA CS:GO Weapons (Official Complete Pack)', workshopId: '1942698539', desc: 'Full Counter-Strike: Global Offensive arsenal with inspects and animations' },
-            { title: 'TFA Insurgency Weapons Pack', workshopId: '293264102', desc: 'Realistic tactical assault rifles, submachine guns, and shotguns' }
+            { title: '[TFA] Fallout Weapons Collection', workshopId: '2111702789', desc: 'Custom wasteland rifles, pistols, and laser weapons' },
+            { title: '[TFA][AT] MG34 Heavy Machinegun', workshopId: '2736932602', desc: 'Tactical machinegun with custom animations and inspect' },
+            { title: '[TFA][AT] Blitz Sight Pack', workshopId: '1387617320', desc: 'Holographic, red dot, and sniper optics for TFA weapons' }
         ]
     },
     'arc9': {
@@ -40,10 +44,12 @@ const KNOWN_BASES = {
         workshopId: '2910505837',
         description: 'Required by ARC9 tactical customizable firearms',
         keywords: ['arc9_'],
+        searchQuery: 'ARC9',
+        searchTag: 'Weapon',
         recommendedPacks: [
-            { title: '[ARC9] Gunsmith Reloaded', workshopId: '2910508082', desc: 'Official core weapon set built by ARC9 team with deep attachments and tuning' },
-            { title: '[ARC9] Modern Warfare 2019 Weapons (MW19)', workshopId: '2873111059', desc: 'Call of Duty MW19 firearms with ultra-realistic reload audio and optics' },
-            { title: '[ARC9] Urban Coalition Port', workshopId: '2932332152', desc: 'Tactical combat rifles, PDWs, and pistols with modern animations' }
+            { title: '[ARC9] Urban Coalition Port', workshopId: '3812993432', desc: 'Modern tactical combat rifles and submachine guns' },
+            { title: '[ARC9] Far Cry 4 Custom Glock', workshopId: '3814742051', desc: 'Customizable sidearm with deep attachment options' },
+            { title: '[ARC9] BO6 - XM4 Assault Rifle', workshopId: '3813969735', desc: 'High-detail assault rifle with custom reload audio' }
         ]
     },
     'lvs': {
@@ -51,8 +57,11 @@ const KNOWN_BASES = {
         workshopId: '2867905170',
         description: 'Required by modern LVS land, air, and sea vehicles',
         keywords: ['lvs_base', 'lvs_framework'],
+        searchQuery: 'LVS',
+        searchTag: 'Vehicle',
         recommendedPacks: [
-            { title: '[LVS] Planes & Fighter Jets', workshopId: '2867906935', desc: 'Fully functional aircraft with aerodynamics and dogfighting' }
+            { title: '[LVS] Spider Tank', workshopId: '3816018921', desc: 'Six-legged functional walking combat tank' },
+            { title: '[LVS] Oblivion Drone', workshopId: '3813741872', desc: 'Autonomous patrol aerial vehicle' }
         ]
     }
 };
@@ -377,6 +386,8 @@ async function runDiagnostics(gmodInfo) {
                 detail: `Installed and operational: ${baseDef.description}`,
                 isBase: true,
                 workshopId: baseDef.workshopId,
+                searchQuery: baseDef.searchQuery || baseDef.name,
+                searchTag: baseDef.searchTag || 'Weapon',
                 recommendedPacks: baseDef.recommendedPacks || []
             });
         }

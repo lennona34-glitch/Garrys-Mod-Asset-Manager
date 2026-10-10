@@ -2,50 +2,59 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
+const gmaCache = new Map();
+
 /**
- * Parses GMA binary file format
+ * Parses GMA binary file format with high-speed buffer parsing and memory caching
  */
 function parseGmaHeader(gmaPath) {
     if (!fs.existsSync(gmaPath)) {
         throw new Error(`File not found: ${gmaPath}`);
     }
 
-    const fd = fs.openSync(gmaPath, 'r');
-    let currentPos = 0;
-
-    function readBytes(length) {
-        const buf = Buffer.alloc(length);
-        const bytesRead = fs.readSync(fd, buf, 0, length, currentPos);
-        currentPos += bytesRead;
-        return buf;
-    }
-
-    function readNullString() {
-        const bytes = [];
-        while (true) {
-            const b = readBytes(1);
-            if (b.length === 0 || b[0] === 0) break;
-            bytes.push(b[0]);
-        }
-        return Buffer.from(bytes).toString('utf8');
-    }
-
+    let stats;
     try {
-        const ident = readBytes(4).toString('utf8');
-        if (ident !== 'GMAD') {
+        stats = fs.statSync(gmaPath);
+        const cacheKey = `${gmaPath}:${stats.mtimeMs}:${stats.size}`;
+        if (gmaCache.has(cacheKey)) {
+            return gmaCache.get(cacheKey);
+        }
+    } catch (_) {}
+
+    const fd = fs.openSync(gmaPath, 'r');
+    try {
+        // Read up to 2MB for header and file table in one fast buffer read
+        const readLen = Math.min(stats ? stats.size : 2097152, 2097152);
+        const buf = Buffer.alloc(readLen);
+        const bytesRead = fs.readSync(fd, buf, 0, readLen, 0);
+
+        let pos = 0;
+        if (bytesRead < 22 || buf.toString('utf8', 0, 4) !== 'GMAD') {
             fs.closeSync(fd);
             return null;
         }
+        pos += 4; // Skip 'GMAD'
 
-        const formatVersion = readBytes(1)[0];
-        const steamId = readBytes(8).readBigUInt64LE(0).toString();
-        const timestamp = Number(readBytes(8).readBigUInt64LE(0));
+        const formatVersion = buf[pos++];
+        const steamId = buf.readBigUInt64LE(pos).toString();
+        pos += 8;
+        const timestamp = Number(buf.readBigUInt64LE(pos));
+        pos += 8;
 
-        const requiredContent = readNullString();
-        const addonName = readNullString();
-        const rawDesc = readNullString();
-        const addonAuthor = readNullString();
-        const addonVersion = readBytes(4).readInt32LE(0);
+        function readNullStr() {
+            const nullIdx = buf.indexOf(0, pos);
+            if (nullIdx === -1 || nullIdx >= bytesRead) return '';
+            const str = buf.toString('utf8', pos, nullIdx);
+            pos = nullIdx + 1;
+            return str;
+        }
+
+        const requiredContent = readNullStr();
+        const addonName = readNullStr();
+        const rawDesc = readNullStr();
+        const addonAuthor = readNullStr();
+        const addonVersion = buf.readInt32LE(pos);
+        pos += 4;
 
         let parsedDesc = null;
         let addonType = '';
@@ -59,16 +68,17 @@ function parseGmaHeader(gmaPath) {
         }
 
         const files = [];
-        while (true) {
-            const entryBuf = readBytes(4);
-            const entry = entryBuf.readUInt32LE(0);
+        while (pos + 4 <= bytesRead) {
+            const entry = buf.readUInt32LE(pos);
+            pos += 4;
             if (entry === 0) break;
 
-            const fname = readNullString();
-            const sizeBuf = readBytes(8);
-            const size = Number(sizeBuf.readBigInt64LE(0));
-            const crcBuf = readBytes(4);
-            const crc = crcBuf.readUInt32LE(0);
+            const fname = readNullStr();
+            if (pos + 12 > bytesRead) break;
+            const size = Number(buf.readBigInt64LE(pos));
+            pos += 8;
+            const crc = buf.readUInt32LE(pos);
+            pos += 4;
 
             files.push({
                 name: fname,
@@ -78,7 +88,7 @@ function parseGmaHeader(gmaPath) {
         }
 
         // Calculate byte offsets for internal files
-        let dataOffset = currentPos;
+        let dataOffset = pos;
         for (const file of files) {
             file.offset = dataOffset;
             dataOffset += file.size;
@@ -121,7 +131,7 @@ function parseGmaHeader(gmaPath) {
             detectedCategory = 'Textures / Materials';
         }
 
-        return {
+        const result = {
             valid: true,
             filePath: gmaPath,
             formatVersion,
@@ -139,6 +149,13 @@ function parseGmaHeader(gmaPath) {
             maps,
             navMeshes
         };
+
+        if (stats) {
+            const cacheKey = `${gmaPath}:${stats.mtimeMs}:${stats.size}`;
+            gmaCache.set(cacheKey, result);
+        }
+
+        return result;
     } catch (err) {
         try { fs.closeSync(fd); } catch (_) {}
         throw err;

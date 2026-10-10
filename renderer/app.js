@@ -53,8 +53,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Auto-refresh maps and diagnostics whenever the user switches back to the app window
+    // Auto-refresh maps and diagnostics whenever the user switches back to the app window (debounced)
+    let lastFocusRefresh = 0;
     window.addEventListener('focus', async () => {
+        if (Date.now() - lastFocusRefresh < 10000) return;
+        lastFocusRefresh = Date.now();
         if (state.gmodInfo && state.gmodInfo.gmodRoot) {
             await Promise.all([refreshMaps(), refreshDiagnostics()]);
         }
@@ -69,14 +72,18 @@ async function loadInitialData() {
         updateGmodStatus();
 
         if (state.gmodInfo && state.gmodInfo.gmodRoot) {
+            // High-speed parallel startup: Maps, Addons, Diagnostics, Presets
             await Promise.all([
                 refreshMaps(),
                 refreshAddons(),
-                refreshPresets(),
-                refreshStorage(),
-                refreshDiagnostics()
+                refreshDiagnostics(),
+                refreshPresets()
             ]);
-            executeWorkshopSearch().catch(() => {});
+
+            // Background pre-fetch of workshop (non-blocking)
+            setTimeout(() => {
+                executeWorkshopSearch().catch(() => {});
+            }, 150);
         }
     } catch (err) {
         console.error('Initialization error:', err);
@@ -134,6 +141,10 @@ function setupTabNavigation() {
                     refreshDiagnostics();
                 } else {
                     renderDiagnostics();
+                }
+            } else if (targetTab === 'storage') {
+                if (!state.storageStats) {
+                    refreshStorage();
                 }
             }
         });
@@ -1467,6 +1478,11 @@ function renderDiagnostics() {
                                     <span style="font-size: 11px; font-weight: 700; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 0.5px;">
                                         ⚡ Available Weapon & Asset Packs for this Base:
                                     </span>
+                                    ${item.searchQuery ? `
+                                        <button class="btn btn-secondary btn-xs btn-browse-base-ws" data-search="${item.searchQuery}" data-tag="${item.searchTag || 'Weapon'}" style="padding: 2px 8px; font-size: 11px;">
+                                            🔎 Browse All on Workshop
+                                        </button>
+                                    ` : ''}
                                 </div>
                                 <div style="display: flex; flex-direction: column; gap: 6px;">
                                     ${item.recommendedPacks.map(p => `
@@ -1529,6 +1545,16 @@ function renderDiagnostics() {
                 const wsid = btn.getAttribute('data-wsid');
                 window.api.openSteamClient(wsid);
                 showToast('Opening pack on Steam. Click "Subscribe" to install!', 'info');
+            });
+        });
+
+        group.querySelectorAll('.btn-browse-base-ws').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const search = btn.getAttribute('data-search');
+                const tag = btn.getAttribute('data-tag') || 'Weapon';
+                const steamSearchUrl = `https://steamcommunity.com/workshop/browse/?appid=4000&searchtext=${encodeURIComponent(search)}&requiredtags%5B0%5D=${encodeURIComponent(tag)}`;
+                window.api.openExternalUrl(steamSearchUrl);
+                showToast(`Opening Garry's Mod Workshop for "${search}" in Steam client...`, 'info');
             });
         });
 
