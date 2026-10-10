@@ -2,6 +2,31 @@ const fs = require('fs');
 const path = require('path');
 const { parseGmaHeader } = require('./gmaParser');
 
+function readAddonNoMount(gmodInfo) {
+    if (!gmodInfo || !gmodInfo.garrysmodDir) return [];
+    const cfgPath = path.join(gmodInfo.garrysmodDir, 'cfg', 'addonnomount.txt');
+    if (!fs.existsSync(cfgPath)) return [];
+    try {
+        const content = fs.readFileSync(cfgPath, 'utf8');
+        const matches = [...content.matchAll(/"\d+"\s+"([^"]+)"/g)];
+        return matches.map(m => m[1]);
+    } catch (_) {
+        return [];
+    }
+}
+
+function writeAddonNoMount(gmodInfo, ids) {
+    if (!gmodInfo || !gmodInfo.garrysmodDir) return;
+    const cfgPath = path.join(gmodInfo.garrysmodDir, 'cfg', 'addonnomount.txt');
+    const unique = [...new Set(ids)];
+    let out = '"addonnomount"\n{\n';
+    unique.forEach((id, idx) => {
+        out += `\t"${idx + 1}"\t\t"${id}"\n`;
+    });
+    out += '}\n';
+    fs.writeFileSync(cfgPath, out, 'utf8');
+}
+
 // Known base addons required by popular GMod community content
 const KNOWN_BASES = {
     'simfphys': {
@@ -81,6 +106,8 @@ async function runDiagnostics(gmodInfo) {
     }
 
     // 1. Scan installed addons to identify active workshop items and headers
+    const noMountIds = readAddonNoMount(gmodInfo);
+    const noMountSet = new Set(noMountIds);
     const installedWorkshopIds = new Set();
     const installedGmaHeaders = [];
 
@@ -92,8 +119,8 @@ async function runDiagnostics(gmodInfo) {
             const files = fs.readdirSync(folder);
             for (const f of files) {
                 const lower = f.toLowerCase();
-                // Only consider active, non-disabled GMAs
-                if (lower.endsWith('.gma') && !lower.endsWith('.disabled')) {
+                // Only consider active, non-disabled, and non-unmounted GMAs
+                if (lower.endsWith('.gma') && !lower.endsWith('.disabled') && !noMountSet.has(item.name)) {
                     installedWorkshopIds.add(item.name);
                     try {
                         const h = parseGmaHeader(path.join(folder, f));
@@ -350,6 +377,7 @@ async function runDiagnostics(gmodInfo) {
     // Check if Alphabet Lore was resolved
     const singleAlphabetDirs = ['2957323514', '2988753442', '2995239904'];
     const alphabetSingleDisabled = singleAlphabetDirs.every(id => {
+        if (noMountSet.has(id)) return true;
         const itemDir = path.join(gmodInfo.workshopDir, id);
         if (!fs.existsSync(itemDir)) return true;
         const files = fs.readdirSync(itemDir);
@@ -359,22 +387,22 @@ async function runDiagnostics(gmodInfo) {
         resolved.push({
             key: 'alphabet_lore',
             title: 'Alphabet Lore Conflict: Resolved',
-            detail: '3 redundant individual single packs are disabled. The all-in-one pack (A-Z) remains active, eliminating 3,500+ duplicate script collisions.',
+            detail: '3 redundant individual single packs are unmounted via addonnomount. The all-in-one pack (A-Z) remains active, eliminating 3,500+ duplicate script collisions.',
             undoActionText: 'Re-enable Single Packs'
         });
     }
 
     // Check if Italian Brainrot was resolved
-    const brainrotReuploadDir = path.join(gmodInfo.workshopDir, '3483718453');
-    let brainrotReuploadDisabled = false;
-    if (fs.existsSync(brainrotReuploadDir)) {
-        brainrotReuploadDisabled = fs.readdirSync(brainrotReuploadDir).some(f => f.toLowerCase().endsWith('.disabled'));
-    }
+    const brainrotReuploadDisabled = noMountSet.has('3483718453') || (() => {
+        const d = path.join(gmodInfo.workshopDir, '3483718453');
+        if (!fs.existsSync(d)) return false;
+        return fs.readdirSync(d).some(f => f.toLowerCase().endsWith('.disabled'));
+    })();
     if (installedWorkshopIds.has('3465056080') && brainrotReuploadDisabled) {
         resolved.push({
             key: 'italian_brainrot',
             title: 'Italian Brainrot Conflict: Resolved',
-            detail: 'Duplicate re-upload version is disabled. The original pack remains active with zero collisions.',
+            detail: 'Duplicate re-upload version is unmounted. The original pack remains active with zero collisions.',
             undoActionText: 'Re-enable Duplicate'
         });
     }
@@ -446,34 +474,28 @@ function fixAddonConflict(gmodInfo, conflictKey) {
         throw new Error(`Unknown conflict key: ${conflictKey}`);
     }
 
-    let modifiedCount = 0;
-    const actionsTaken = [];
+    const currentNoMount = readAddonNoMount(gmodInfo);
+    const newNoMount = [...currentNoMount, ...targetWorkshopIds];
+    writeAddonNoMount(gmodInfo, newNoMount);
 
+    // Ensure GMA files are NOT renamed to .disabled so Steam never tries to redownload them
     for (const wsId of targetWorkshopIds) {
         const itemDir = path.join(gmodInfo.workshopDir, wsId);
         if (!fs.existsSync(itemDir)) continue;
-
         const files = fs.readdirSync(itemDir);
         for (const f of files) {
-            const lower = f.toLowerCase();
-            if (lower.endsWith('.gma') && !lower.endsWith('.disabled')) {
+            if (f.toLowerCase().endsWith('.disabled')) {
                 const srcPath = path.join(itemDir, f);
-                const destPath = `${srcPath}.disabled`;
-                try {
-                    fs.renameSync(srcPath, destPath);
-                    modifiedCount++;
-                    actionsTaken.push(`Disabled ${wsId} (${f})`);
-                } catch (e) {
-                    console.error(`Failed to disable ${srcPath}:`, e);
-                }
+                const destPath = srcPath.replace(/\.disabled$/i, '');
+                try { fs.renameSync(srcPath, destPath); } catch (_) {}
             }
         }
     }
 
     return {
         success: true,
-        modifiedCount,
-        actionsTaken
+        modifiedCount: targetWorkshopIds.length,
+        actionsTaken: targetWorkshopIds.map(id => `Unmounted ${id} via addonnomount.txt (prevents redownload freeze)`)
     };
 }
 
@@ -491,30 +513,13 @@ function undoAddonConflict(gmodInfo, conflictKey) {
     };
 
     const targetWorkshopIds = conflictsMap[conflictKey] || [];
-    let modifiedCount = 0;
-
-    for (const wsId of targetWorkshopIds) {
-        const itemDir = path.join(gmodInfo.workshopDir, wsId);
-        if (!fs.existsSync(itemDir)) continue;
-
-        const files = fs.readdirSync(itemDir);
-        for (const f of files) {
-            if (f.toLowerCase().endsWith('.disabled')) {
-                const srcPath = path.join(itemDir, f);
-                const destPath = srcPath.replace(/\.disabled$/i, '');
-                try {
-                    fs.renameSync(srcPath, destPath);
-                    modifiedCount++;
-                } catch (e) {
-                    console.error(`Failed to re-enable ${srcPath}:`, e);
-                }
-            }
-        }
-    }
+    const currentNoMount = readAddonNoMount(gmodInfo);
+    const newNoMount = currentNoMount.filter(id => !targetWorkshopIds.includes(id));
+    writeAddonNoMount(gmodInfo, newNoMount);
 
     return {
         success: true,
-        modifiedCount
+        modifiedCount: targetWorkshopIds.length
     };
 }
 

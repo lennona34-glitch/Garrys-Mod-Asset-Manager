@@ -313,9 +313,9 @@ async function launchMap(gmodInfo, mapName, options = {}) {
     const {
         novid = true,
         noworkshop = false,
-        windowed = false,
-        width = null,
-        height = null,
+        windowed = true,
+        width = 1920,
+        height = 1080,
         gamemode = 'sandbox',
         extraArgs = ''
     } = options;

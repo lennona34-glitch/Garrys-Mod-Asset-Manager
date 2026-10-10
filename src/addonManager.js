@@ -9,6 +9,18 @@ async function scanAllAddons(gmodInfo) {
     const addons = [];
     if (!gmodInfo) return addons;
 
+    let noMountSet = new Set();
+    if (gmodInfo.garrysmodDir) {
+        const noMountPath = path.join(gmodInfo.garrysmodDir, 'cfg', 'addonnomount.txt');
+        if (fs.existsSync(noMountPath)) {
+            try {
+                const content = fs.readFileSync(noMountPath, 'utf8');
+                const matches = [...content.matchAll(/"\d+"\s+"([^"]+)"/g)];
+                noMountSet = new Set(matches.map(m => m[1]));
+            } catch (_) {}
+        }
+    }
+
     // 1. Scan Workshop Addons (steamapps/workshop/content/4000)
     if (gmodInfo.workshopDir && fs.existsSync(gmodInfo.workshopDir)) {
         try {
@@ -22,7 +34,7 @@ async function scanAllAddons(gmodInfo) {
                     const lower = file.toLowerCase();
                     if (lower.endsWith('.gma') || lower.endsWith('.gma.disabled')) {
                         const fullPath = path.join(folderPath, file);
-                        const isEnabled = !lower.endsWith('.disabled');
+                        const isEnabled = !lower.endsWith('.disabled') && !noMountSet.has(itemFolder.name);
                         const stats = fs.statSync(fullPath);
 
                         try {
@@ -158,9 +170,48 @@ async function scanAllAddons(gmodInfo) {
 /**
  * Toggle addon enabled / disabled state
  */
-function toggleAddonState(addonFilePath, enable) {
+function toggleAddonState(addonFilePath, enable, gmodInfo = null) {
     if (!fs.existsSync(addonFilePath)) {
         throw new Error(`File does not exist: ${addonFilePath}`);
+    }
+
+    const parentDir = path.basename(path.dirname(addonFilePath));
+    const isWorkshopItem = /^\d+$/.test(parentDir);
+
+    if (isWorkshopItem && gmodInfo && gmodInfo.garrysmodDir) {
+        const noMountPath = path.join(gmodInfo.garrysmodDir, 'cfg', 'addonnomount.txt');
+        let ids = [];
+        if (fs.existsSync(noMountPath)) {
+            try {
+                const content = fs.readFileSync(noMountPath, 'utf8');
+                ids = [...content.matchAll(/"\d+"\s+"([^"]+)"/g)].map(m => m[1]);
+            } catch (_) {}
+        }
+        if (enable) {
+            ids = ids.filter(id => id !== parentDir);
+        } else {
+            ids.push(parentDir);
+        }
+        ids = [...new Set(ids)];
+        let out = '"addonnomount"\n{\n';
+        ids.forEach((id, idx) => {
+            out += `\t"${idx + 1}"\t\t"${id}"\n`;
+        });
+        out += '}\n';
+        fs.writeFileSync(noMountPath, out, 'utf8');
+
+        // Ensure file is not named .disabled so Steam never tries to redownload
+        if (addonFilePath.toLowerCase().endsWith('.disabled')) {
+            const normalPath = addonFilePath.replace(/\.disabled$/i, '');
+            try { fs.renameSync(addonFilePath, normalPath); } catch (_) {}
+            addonFilePath = normalPath;
+        }
+
+        return {
+            previousPath: addonFilePath,
+            newPath: addonFilePath,
+            isEnabled: enable
+        };
     }
 
     const isCurrentlyDisabled = addonFilePath.toLowerCase().endsWith('.disabled');

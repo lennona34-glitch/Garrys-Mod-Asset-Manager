@@ -136,7 +136,8 @@ ipcMain.handle('scan-addons', async () => {
 });
 
 ipcMain.handle('toggle-addon', async (event, { filePath, enable }) => {
-    return toggleAddonState(filePath, enable);
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return toggleAddonState(filePath, enable, currentGmodInfo);
 });
 
 ipcMain.handle('inspect-gma', async (event, filePath) => {
