@@ -81,7 +81,7 @@ const KNOWN_BASES = {
     },
     'lvs': {
         name: 'LVS - Framework',
-        workshopId: '2867905170',
+        workshopId: '2912816023',
         description: 'Required by modern LVS land, air, and sea vehicles',
         keywords: ['lvs_base', 'lvs_framework'],
         searchQuery: 'LVS',
@@ -229,7 +229,7 @@ async function runDiagnostics(gmodInfo) {
 
                 for (const [baseKey, baseDef] of Object.entries(KNOWN_BASES)) {
                     // Do not check the base addon against itself
-                    if (h.workshopId === baseDef.workshopId) continue;
+                    if (h.workshopId === baseDef.workshopId || h.name.toLowerCase().includes(baseDef.name.toLowerCase())) continue;
 
                     const matches = baseDef.keywords.some(kw => code.includes(kw));
                     if (matches) {
@@ -251,7 +251,8 @@ async function runDiagnostics(gmodInfo) {
         const baseDef = KNOWN_BASES[baseKey];
         if (!baseDef) continue;
 
-        const isBaseInstalled = installedWorkshopIds.has(baseDef.workshopId);
+        const isBaseInstalled = installedWorkshopIds.has(baseDef.workshopId) ||
+            installedGmaHeaders.some(h => h.name.toLowerCase().includes(baseDef.name.toLowerCase()));
         if (!isBaseInstalled) {
             missingBasesCount++;
             const uniqueAddonNames = [...new Set(usingAddons.map(a => a.addonName))];
