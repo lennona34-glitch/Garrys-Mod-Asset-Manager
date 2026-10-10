@@ -299,7 +299,7 @@ ipcMain.handle('generate-map-navmesh', async (event, mapName) => {
         }, 1200);
     }
 
-    return await launchMap(currentGmodInfo, mapName, { extraArgs: '+sv_cheats 1 +nav_quicksave 1' });
+    return await launchMap(currentGmodInfo, mapName, { extraArgs: '+sv_cheats 1 +nav_quicksave 1 +nav_max_view_distance 1' });
 });
 
 ipcMain.handle('subscribe-missing-bases', async (event, workshopIds) => {
