@@ -19,6 +19,30 @@ function getDefaultDescription(mapName) {
 }
 
 /**
+ * Queries gmpublish list to get official published workshop items
+ */
+function listPublishedFiles(gmpublishExe) {
+    return new Promise((resolve) => {
+        execFile(gmpublishExe, ['list'], (err, stdout) => {
+            if (err || !stdout) return resolve([]);
+            const items = [];
+            const lines = stdout.split(/\r?\n/);
+            for (const line of lines) {
+                const parts = line.trim().split('\t');
+                if (parts.length >= 3 && /^\d{8,12}$/.test(parts[0])) {
+                    items.push({
+                        id: parts[0],
+                        size: parts[1],
+                        title: parts[2].replace(/^"|"$/g, '')
+                    });
+                }
+            }
+            resolve(items);
+        });
+    });
+}
+
+/**
  * Prepares the 512x512 icon.jpg required by gmpublish.exe
  */
 function prepareIcon(mapName, gmodInfo, stagingDir, nativeImage) {
@@ -182,17 +206,38 @@ async function publishNavmeshToWorkshop(gmodInfo, { mapName, title, description,
                     });
                 }
 
-                // Extract Workshop Item ID
-                const idMatch = combined.match(/(?:Item ID|Workshop Item ID|UID|ID):\s*(\d+)/i) || combined.match(/\b(\d{9,11})\b/);
-                const workshopId = idMatch ? idMatch[1] : null;
+                // Query official gmpublish list to get the verified 10-digit Workshop ID (avoids 17-digit SteamID)
+                listPublishedFiles(gmpublishExe).then(publishedList => {
+                    let workshopId = null;
+                    const matching = publishedList.find(item => item.title === finalTitle);
+                    if (matching) {
+                        workshopId = matching.id;
+                    } else {
+                        const fallbackMatch = combined.match(/\b(\d{9,11})\b/);
+                        if (fallbackMatch && !fallbackMatch[1].startsWith('7656119')) {
+                            workshopId = fallbackMatch[1];
+                        } else if (publishedList.length > 0) {
+                            workshopId = publishedList[publishedList.length - 1].id;
+                        }
+                    }
 
-                resolve({
-                    success: true,
-                    workshopId,
-                    title: finalTitle,
-                    url: workshopId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${workshopId}` : null,
-                    message: `Successfully published ${finalTitle} to Steam Workshop!`,
-                    details: combined
+                    resolve({
+                        success: true,
+                        workshopId,
+                        title: finalTitle,
+                        url: workshopId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${workshopId}` : null,
+                        message: `Successfully published ${finalTitle} to Steam Workshop!`,
+                        details: combined
+                    });
+                }).catch(() => {
+                    resolve({
+                        success: true,
+                        workshopId: null,
+                        title: finalTitle,
+                        url: null,
+                        message: `Published ${finalTitle} to Steam Workshop!`,
+                        details: combined
+                    });
                 });
             });
 
