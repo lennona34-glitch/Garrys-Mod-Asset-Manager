@@ -9,10 +9,12 @@ const KNOWN_BASES = {
         workshopId: '771487490',
         description: 'Required by custom drivable vehicles and chase minigames (e.g. G-PAKO)',
         keywords: ['simfphys'],
+        searchQuery: '[simfphys]',
+        searchTag: 'Vehicle',
         recommendedPacks: [
-            { title: '[simfphys] Armed Vehicles Pack', workshopId: '831680603', desc: 'Drivable tanks, APCs, armed jeeps with firing cannons & turrets' },
-            { title: '[simfphys] Civilian Cars Pack', workshopId: '927702816', desc: 'Muscle cars, sedans, hatchbacks, and sports convertibles' },
-            { title: '[simfphys] HL2 Drivable Vehicles', workshopId: '830889246', desc: 'Half-Life 2 buggy, jalopy, and airboat ported to simfphys physics' }
+            { title: '[simfphys] - Armed Vehicles', workshopId: '831680603', desc: 'Drivable tanks, APCs, armed jeeps with firing cannons & turrets' },
+            { title: '[simfphys] Left 4 Dead 2 Vehicles', workshopId: '1945909088', desc: 'Police cruisers, pickup trucks, ambulances, and sedans' },
+            { title: '[simfphys] WW2 German Tank Pack', workshopId: '1947110087', desc: 'Fully functional drivable Tiger, Panzer, and heavy tanks' }
         ]
     },
     'vj_base': {
