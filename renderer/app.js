@@ -1355,6 +1355,32 @@ function renderDiagnostics() {
         badge.style.display = 'none';
     }
 
+    // Dismissed / Silenced Navmesh state
+    const silencedAllNav = localStorage.getItem('gmod_silence_all_nav_notices') === 'true';
+    let dismissedNavMaps = [];
+    try {
+        dismissedNavMaps = JSON.parse(localStorage.getItem('gmod_dismissed_nav_maps') || '[]');
+    } catch (_) {}
+
+    // Filter out dismissed maps from nav recommendations
+    const activeNavRecs = [];
+    (res.recommendations || []).forEach(r => {
+        if (r.type === 'navmesh_notice') {
+            if (silencedAllNav) return;
+            const remainingMaps = (r.affectedMaps || []).filter(m => !dismissedNavMaps.includes(m));
+            if (remainingMaps.length > 0) {
+                activeNavRecs.push({
+                    ...r,
+                    affectedMaps: remainingMaps
+                });
+            }
+        } else {
+            activeNavRecs.push(r);
+        }
+    });
+
+    const activeMapCount = activeNavRecs.reduce((acc, r) => acc + (r.affectedMaps ? r.affectedMaps.length : 0), 0);
+
     // Update summary stat boxes
     const elMounted = document.getElementById('docStatMounted');
     const elBases = document.getElementById('docStatBases');
@@ -1365,22 +1391,49 @@ function renderDiagnostics() {
     if (elMounted) elMounted.textContent = res.counts.missingContent > 0 ? '1 Missing (CS:S)' : 'Mounted';
     if (elBases) elBases.textContent = res.counts.missingBases;
     if (elConflicts) elConflicts.textContent = res.counts.conflicts;
-    if (elNav) elNav.textContent = res.counts.noNav;
+    if (elNav) {
+        if (silencedAllNav) {
+            elNav.textContent = '0 (Silenced)';
+            elNav.title = 'NavMesh recommendations silenced (Non-Nextbot maps dismissed)';
+        } else if (dismissedNavMaps.length > 0) {
+            elNav.textContent = `${activeMapCount} (${dismissedNavMaps.length} Ignored)`;
+        } else {
+            elNav.textContent = res.counts.noNav;
+        }
+    }
     if (elFixed) elFixed.textContent = res.counts.resolvedCount || 0;
 
     const container = document.getElementById('doctorSectionsContainer');
     if (!container) return;
     container.innerHTML = '';
 
-    if (res.issues.length === 0 && res.recommendations.length === 0) {
-        container.innerHTML = `
-            <div class="doctor-all-clean">
-                <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                <h3>All Systems Healthy!</h3>
-                <p>No missing base frameworks, content mounts, or script conflicts were detected.</p>
-            </div>
+    const isAllClean = res.issues.length === 0 && activeNavRecs.length === 0;
+
+    if (isAllClean) {
+        const cleanCard = document.createElement('div');
+        cleanCard.className = 'doctor-all-clean';
+        cleanCard.innerHTML = `
+            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <h3>All Systems Healthy! (100% Clean)</h3>
+            <p>No missing base frameworks, content mounts, or script conflicts were detected. Everything is optimal!</p>
+            ${(silencedAllNav || dismissedNavMaps.length > 0) ? `
+                <div style="margin-top: 14px; font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span>🙈 ${silencedAllNav ? '10 map NavMesh recommendations silenced (Ignored).' : `${dismissedNavMaps.length} map NavMesh recommendations ignored.`}</span>
+                    <button class="btn btn-secondary btn-xs" id="btnRestoreNavNotices" style="padding: 2px 8px;">Unhide</button>
+                </div>
+            ` : ''}
         `;
-        return;
+        container.appendChild(cleanCard);
+
+        const btnRestore = cleanCard.querySelector('#btnRestoreNavNotices');
+        if (btnRestore) {
+            btnRestore.addEventListener('click', () => {
+                localStorage.removeItem('gmod_silence_all_nav_notices');
+                localStorage.removeItem('gmod_dismissed_nav_maps');
+                showToast('NavMesh recommendations restored.', 'info');
+                renderDiagnostics();
+            });
+        }
     }
 
     // 1. Missing Mounted Game Content (CS:S)
@@ -1600,32 +1653,51 @@ function renderDiagnostics() {
     }
 
     // 4. Nextbot & NavMesh Recommendations
-    const navRecs = res.recommendations.filter(r => r.type === 'navmesh_notice');
-    if (navRecs.length > 0) {
+    if (activeNavRecs.length > 0) {
         const group = document.createElement('div');
         group.className = 'doctor-section-group';
         group.innerHTML = `
-            <div class="doctor-section-group-title">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
-                <span>Nextbots & Map Navigation (NavMesh)</span>
+            <div class="doctor-section-group-title" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+                    <span>Nextbots & Map Navigation (NavMesh)</span>
+                </div>
+                <button class="btn btn-secondary btn-sm btn-dismiss-all-nav" title="Dismiss all NavMesh notices (Recommended if you don't play Nextbots on these maps)">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>⚡ Dismiss All (Mark as Handled)</span>
+                </button>
             </div>
         `;
 
-        navRecs.forEach(rec => {
+        const btnDismissAll = group.querySelector('.btn-dismiss-all-nav');
+        if (btnDismissAll) {
+            btnDismissAll.addEventListener('click', () => {
+                localStorage.setItem('gmod_silence_all_nav_notices', 'true');
+                showToast('All NavMesh recommendations dismissed! System is 100% Healthy.', 'success');
+                renderDiagnostics();
+            });
+        }
+
+        activeNavRecs.forEach(rec => {
             const card = document.createElement('div');
             card.className = 'doctor-card info-severity';
             
             let mapsChipsHtml = '';
             if (rec.affectedMaps && rec.affectedMaps.length > 0) {
                 mapsChipsHtml = `
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 10px; margin-bottom: 8px;">Installed maps lacking a .nav mesh (${rec.affectedMaps.length}) — Click <strong>⚡ 1-Click Auto-Fix</strong> on any map:</div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 10px; margin-bottom: 8px;">Installed maps lacking a .nav mesh (${rec.affectedMaps.length}) — Click <strong>⚡ Auto-Fix</strong> or dismiss (<strong>✕</strong>) maps you don't use for Nextbots:</div>
                     <div class="doctor-maps-table" style="max-height: 260px; display: flex; flex-wrap: wrap; gap: 8px;">
                         ${rec.affectedMaps.map(m => `
                             <div class="doctor-map-nav-item">
-                                <span class="doctor-map-name" title="${m}" style="font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;">${m}</span>
-                                <button class="btn btn-primary btn-xs btn-gen-nav" data-map="${m}" title="1-Click Automated Autopilot: Launches GMod and automatically generates the Navmesh with zero typing!">
-                                    ⚡ 1-Click Auto-Fix
-                                </button>
+                                <span class="doctor-map-name" title="${m}" style="font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;">${m}</span>
+                                <div style="display: flex; gap: 4px; align-items: center;">
+                                    <button class="btn btn-primary btn-xs btn-gen-nav" data-map="${m}" title="1-Click Automated Autopilot: Launches GMod and automatically generates the Navmesh with zero typing!">
+                                        ⚡ Auto-Fix
+                                    </button>
+                                    <button class="btn btn-secondary btn-xs btn-dismiss-map-nav" data-map="${m}" title="Dismiss notice for ${m}" style="padding: 2px 7px; color: var(--text-muted);">
+                                        ✕
+                                    </button>
+                                </div>
                             </div>
                         `).join('')}
                     </div>
@@ -1637,15 +1709,17 @@ function renderDiagnostics() {
                     <span class="doctor-card-title">${rec.title}</span>
                     <span class="doctor-card-badge" style="background: rgba(14, 165, 233, 0.2); color: var(--accent-blue); border: 1px solid rgba(14, 165, 233, 0.4);">Pathfinding Notice</span>
                 </div>
-                <div class="doctor-card-desc">${rec.message}</div>
+                <div class="doctor-card-desc">
+                    ${rec.message}
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 4px; border-left: 3px solid var(--accent-blue);">
+                        💡 <strong>Don't play Nextbots on these maps?</strong> Campaign levels (like Silent Escape), horror maps, and driving roads have their own scripted AI and don't require a NavMesh. Click <strong>⚡ Dismiss All</strong> above to instantly clear your dashboard to 100% Healthy!
+                    </div>
+                </div>
                 ${mapsChipsHtml}
                 <div class="doctor-conflict-item" style="margin-top: 14px; border-left: 3px solid var(--accent-cyan);">
-                    <div class="doctor-conflict-fix" style="color: var(--accent-cyan); font-weight: 600;">⚡ 100% Automated NavMesh Generation (Zero Terminal / Zero Typing):</div>
+                    <div class="doctor-conflict-fix" style="color: var(--accent-cyan); font-weight: 600;">⚡ Automated Autopilot Generation:</div>
                     <div class="doctor-conflict-desc" style="margin-top: 6px; line-height: 1.6;">
-                        Click <strong>⚡ 1-Click Auto-Fix</strong> next to any map. The app automatically injects an intelligent autopilot into GMod, loads the map, seeds walkable space, and generates the NavMesh.
-                        <div style="margin-top: 6px; color: #fbbf24;">
-                            👉 <strong>What you do:</strong> Literally <em>nothing!</em> Just let GMod load and wait ~45 seconds without touching your PC. The game will display an on-screen notice, compute the 3D mesh, and automatically reload with the NavMesh permanently saved!
-                        </div>
+                        If you ever do want a NavMesh for a specific map, click <strong>⚡ Auto-Fix</strong> next to it. GMod will load and calculate it automatically. Otherwise, click <strong>⚡ Dismiss All</strong> to silence the warning.
                     </div>
                 </div>
             `;
@@ -1661,6 +1735,24 @@ function renderDiagnostics() {
                     } catch (err) {
                         showToast(`Failed to launch map: ${err.message}`, 'error');
                     }
+                });
+            });
+
+            // Bind dismiss single map buttons
+            card.querySelectorAll('.btn-dismiss-map-nav').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const mapName = btn.getAttribute('data-map');
+                    let currentDismissed = [];
+                    try {
+                        currentDismissed = JSON.parse(localStorage.getItem('gmod_dismissed_nav_maps') || '[]');
+                    } catch (_) {}
+                    if (!currentDismissed.includes(mapName)) {
+                        currentDismissed.push(mapName);
+                        localStorage.setItem('gmod_dismissed_nav_maps', JSON.stringify(currentDismissed));
+                    }
+                    showToast(`Dismissed NavMesh notice for ${mapName}`, 'info');
+                    renderDiagnostics();
                 });
             });
 
