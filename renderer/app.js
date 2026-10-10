@@ -417,6 +417,11 @@ function setupEventHandlers() {
     document.getElementById('modalFileSearch').addEventListener('input', filterGmaFiles);
     document.getElementById('btnModalUnpackGmad').addEventListener('click', unpackCurrentGma);
 
+    // Publish NavMesh Modal
+    document.getElementById('btnClosePublishNavModal').addEventListener('click', closePublishNavModal);
+    document.getElementById('btnCancelPublishNav').addEventListener('click', closePublishNavModal);
+    document.getElementById('btnConfirmPublishNav').addEventListener('click', executePublishNavmesh);
+
     // Settings browse
     document.getElementById('btnBrowseGmodPath').addEventListener('click', async () => {
         const folder = await window.api.selectFolderDialog();
@@ -541,6 +546,10 @@ function renderMaps() {
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                     <span>Launch</span>
                 </button>
+                ${map.hasNav ? `
+                <button class="btn btn-secondary btn-icon" title="Publish NavMesh to Steam Workshop" data-action="publish-nav" data-map="${map.mapName}" style="color: #38bdf8;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+                </button>` : ''}
                 ${!isNative ? `
                 <button class="btn btn-secondary btn-icon" title="Extract loose .bsp to garrysmod/maps" data-action="extract" data-gma="${map.filePath}" data-internal="${map.internalMapPath}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -559,6 +568,13 @@ function renderMaps() {
         card.querySelector('.btn-card-launch').addEventListener('click', () => {
             launchSelectedMap(map.mapName);
         });
+
+        const btnPublishNav = card.querySelector('[data-action="publish-nav"]');
+        if (btnPublishNav) {
+            btnPublishNav.addEventListener('click', () => {
+                openPublishNavModal(map.mapName);
+            });
+        }
 
         const btnExtract = card.querySelector('[data-action="extract"]');
         if (btnExtract) {
@@ -920,6 +936,118 @@ async function saveNewPreset() {
         showToast(`Preset "${name}" created!`, 'success');
     } catch (e) {
         showToast('Error saving preset: ' + e.message, 'error');
+    }
+}
+
+// ---------------- WORKSHOP NAVMESH PUBLISHER MODAL ----------------
+let currentPublishingMap = null;
+
+async function openPublishNavModal(mapName) {
+    currentPublishingMap = mapName;
+    const modal = document.getElementById('publishNavmeshModal');
+    const targetLabel = document.getElementById('pubNavMapTarget');
+    const sizeLabel = document.getElementById('pubNavFileSize');
+    const iconPreview = document.getElementById('pubNavIconPreview');
+    const titleInput = document.getElementById('pubNavTitleInput');
+    const descInput = document.getElementById('pubNavDescInput');
+    const statusAlert = document.getElementById('pubNavStatusAlert');
+    const btnConfirm = document.getElementById('btnConfirmPublishNav');
+
+    statusAlert.style.display = 'none';
+    statusAlert.innerHTML = '';
+    btnConfirm.disabled = false;
+    btnConfirm.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+        <span>Upload to Steam Workshop</span>
+    `;
+
+    targetLabel.textContent = mapName;
+    sizeLabel.textContent = 'Loading details...';
+    modal.classList.add('active');
+
+    try {
+        const meta = await window.api.getPublishNavmeshMeta(mapName);
+        titleInput.value = meta.title || `[NavMesh] ${mapName}`;
+        descInput.value = meta.description || '';
+        sizeLabel.textContent = `NavMesh Size: ${formatBytes(meta.navSize)}`;
+        if (meta.thumbUrl) {
+            iconPreview.src = meta.thumbUrl;
+        } else {
+            iconPreview.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="%231e293b"/><text x="36" y="42" font-family="sans-serif" font-weight="bold" font-size="10" fill="%2338bdf8" text-anchor="middle">NAVMESH</text></svg>';
+        }
+    } catch (err) {
+        showToast('Failed to load map metadata: ' + err.message, 'error');
+    }
+}
+
+function closePublishNavModal() {
+    const modal = document.getElementById('publishNavmeshModal');
+    if (modal) modal.classList.remove('active');
+    currentPublishingMap = null;
+}
+
+async function executePublishNavmesh() {
+    if (!currentPublishingMap) return;
+    const btnConfirm = document.getElementById('btnConfirmPublishNav');
+    const statusAlert = document.getElementById('pubNavStatusAlert');
+    const titleInput = document.getElementById('pubNavTitleInput');
+    const descInput = document.getElementById('pubNavDescInput');
+    const checkboxes = document.querySelectorAll('#pubNavTagsContainer input[type="checkbox"]:checked');
+    const tags = Array.from(checkboxes).map(cb => cb.value);
+
+    btnConfirm.disabled = true;
+    btnConfirm.innerHTML = `<span class="spinner" style="width: 14px; height: 14px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; display: inline-block;"></span> Packing GMA & Publishing to Steam...`;
+    statusAlert.style.display = 'block';
+    statusAlert.style.background = 'rgba(56, 189, 248, 0.15)';
+    statusAlert.style.color = '#38bdf8';
+    statusAlert.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+    statusAlert.innerHTML = `Packaging .nav into GMA and communicating with Steamworks publisher... Please wait!`;
+
+    try {
+        const res = await window.api.publishNavmesh({
+            mapName: currentPublishingMap,
+            title: titleInput.value,
+            description: descInput.value,
+            tags
+        });
+
+        if (res.success) {
+            statusAlert.style.background = 'rgba(34, 197, 94, 0.15)';
+            statusAlert.style.color = '#4ade80';
+            statusAlert.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+            statusAlert.innerHTML = `
+                <div style="font-weight: 700; margin-bottom: 4px;">🎉 Successfully Published to Steam Workshop!</div>
+                <div><strong>${res.title}</strong> is now live on your Steam Workshop profile.</div>
+                ${res.url ? `<div style="margin-top: 8px;"><a href="#" id="lnkViewWorkshopItem" style="color: #38bdf8; text-decoration: underline; font-weight: 600;">Open Workshop Item ↗</a></div>` : ''}
+            `;
+            if (res.url) {
+                const link = document.getElementById('lnkViewWorkshopItem');
+                if (link) {
+                    link.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        if (res.workshopId) window.api.openSteamClient(res.workshopId);
+                        else window.api.openExternalUrl(res.url);
+                    });
+                }
+            }
+            btnConfirm.innerHTML = `✓ Upload Complete`;
+            showToast(`Published [NavMesh] ${currentPublishingMap} to Steam Workshop!`, 'success');
+        } else {
+            statusAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+            statusAlert.style.color = '#f87171';
+            statusAlert.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            statusAlert.innerHTML = `⚠️ ${res.error || 'Upload failed'}`;
+            btnConfirm.disabled = false;
+            btnConfirm.innerHTML = `Retry Upload`;
+        }
+    } catch (err) {
+        statusAlert.style.display = 'block';
+        statusAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+        statusAlert.style.color = '#f87171';
+        statusAlert.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        statusAlert.innerHTML = `⚠️ Error: ${err.message}`;
+        btnConfirm.disabled = false;
+        btnConfirm.innerHTML = `Retry Upload`;
     }
 }
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron');
 app.disableHardwareAcceleration();
 const path = require('path');
 const fs = require('fs');
@@ -10,6 +10,7 @@ const { analyzeStorage, cleanTarget } = require('./src/storageCleaner');
 const { fetchPublishedFileDetails, searchWorkshop, openInSteamClient, openInBrowser, openSteamWorkshopHub, openSteamUrl } = require('./src/workshopService');
 const { loadPresets, createPreset, deletePreset, applyPreset } = require('./src/presetsManager');
 const { runDiagnostics, fixAddonConflict, undoAddonConflict } = require('./src/diagnosticsManager');
+const { getDefaultTitle, getDefaultDescription, publishNavmeshToWorkshop } = require('./src/workshopPublisher');
 
 let mainWindow = null;
 let currentGmodInfo = null;
@@ -316,3 +317,41 @@ ipcMain.handle('undo-addon-conflict', async (event, conflictKey) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     return undoAddonConflict(currentGmodInfo, conflictKey);
 });
+
+ipcMain.handle('get-publish-navmesh-meta', async (event, mapName) => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    const navPath = currentGmodInfo.mapsDir ? path.join(currentGmodInfo.mapsDir, `${mapName}.nav`) : null;
+    let navSize = 0;
+    if (navPath && fs.existsSync(navPath)) {
+        navSize = fs.statSync(navPath).size;
+    }
+
+    let thumbUrl = null;
+    const thumbCandidates = [
+        path.join(__dirname, 'data', 'thumbnails', `${mapName}.png`),
+        path.join(__dirname, 'data', 'thumbnails', `${mapName}.jpg`),
+        currentGmodInfo.mapsDir ? path.join(currentGmodInfo.mapsDir, `${mapName}.png`) : null,
+        currentGmodInfo.mapsDir ? path.join(currentGmodInfo.mapsDir, `${mapName}.jpg`) : null,
+    ].filter(Boolean);
+
+    for (const cand of thumbCandidates) {
+        if (fs.existsSync(cand)) {
+            thumbUrl = 'file://' + cand.replace(/\\/g, '/');
+            break;
+        }
+    }
+
+    return {
+        mapName,
+        title: getDefaultTitle(mapName),
+        description: getDefaultDescription(mapName),
+        navSize,
+        thumbUrl
+    };
+});
+
+ipcMain.handle('publish-navmesh', async (event, { mapName, title, description, tags }) => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return await publishNavmeshToWorkshop(currentGmodInfo, { mapName, title, description, tags }, nativeImage);
+});
+
