@@ -222,6 +222,14 @@
                         <button class="chip" data-wstag="Vehicle" data-wssort="trend">🚗 Vehicles</button>
                         <button class="chip" data-wstag="" data-wssort="trend">✨ All Trending</button>
                     </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding: 0 4px; flex-wrap: wrap; gap: 8px;">
+                        <label class="checkbox-label" style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: var(--text-secondary); user-select: none;">
+                            <input type="checkbox" id="chkHideSubscribedWs" checked>
+                            <span>Hide items I already have (Fresh discoveries only)</span>
+                        </label>
+                        <span id="wsDiscoveryStatus" style="font-size: 11px; color: var(--accent-cyan); font-weight: 500;"></span>
+                    </div>
                 </div>
 
                 <div class="workshop-grid" id="workshopGrid">
@@ -345,6 +353,28 @@
                         <div class="form-group">
                             <label>Custom Launch Arguments:</label>
                             <input type="text" id="optExtraArgs" placeholder="+sv_lan 1">
+                        </div>
+                    </div>
+
+                    <div class="card settings-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <h3 style="margin-bottom: 0;">🎮 Wireless Controller / Gamepad Tuning</h3>
+                            <span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #34d399; border: 1px solid rgba(34, 197, 94, 0.4); padding: 4px 8px; font-size: 11px;">Tuned Active</span>
+                        </div>
+                        <p class="card-desc">Tames wild stick acceleration and sensitivity so Xbox, PlayStation, and wireless controllers aim smoothly and walk naturally instead of spinning uncontrollably.</p>
+                        <div class="form-group" style="margin-top: 15px;">
+                            <label>Sensitivity & Acceleration Preset:</label>
+                            <select id="optControllerPreset" style="width: 100%; background: #131b26; border: 1px solid rgba(255,255,255,0.12); color: #f8fafc; padding: 9px 12px; border-radius: 6px; font-size: 13px; font-family: inherit;">
+                                <option value="smooth" selected>Smooth & Balanced (Recommended) — 0.55x Look, 0.5x Accel, 2.2 Mouse</option>
+                                <option value="cinematic">Cinematic / Precision Slow — 0.35x Look, 0.3x Accel (Great for driving & posing)</option>
+                                <option value="arcade">Arcade Fast — 0.85x Look, 0.8x Accel (Faster turn rate)</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button class="btn btn-primary" id="btnApplyControllerTuning">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                <span>Re-Apply Controller Tuning</span>
+                            </button>
                         </div>
                     </div>
 

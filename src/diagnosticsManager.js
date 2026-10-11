@@ -411,6 +411,9 @@ async function runDiagnostics(gmodInfo) {
     // Check active bases
     for (const [baseKey, baseDef] of Object.entries(KNOWN_BASES)) {
         if (installedWorkshopIds.has(baseDef.workshopId)) {
+            const uninstalledPacks = (baseDef.recommendedPacks || []).filter(
+                p => !installedWorkshopIds.has(p.workshopId)
+            );
             resolved.push({
                 key: `base_${baseKey}`,
                 title: `${baseDef.name}: Active & Healthy`,
@@ -419,7 +422,7 @@ async function runDiagnostics(gmodInfo) {
                 workshopId: baseDef.workshopId,
                 searchQuery: baseDef.searchQuery || baseDef.name,
                 searchTag: baseDef.searchTag || 'Weapon',
-                recommendedPacks: baseDef.recommendedPacks || []
+                recommendedPacks: uninstalledPacks
             });
         }
     }

@@ -5,6 +5,7 @@ node_modules/
 data/workshop_details_cache.json
 data/thumbnails/*.png
 !data/thumbnails/.gitkeep
+data/workshop_staging/
 
 # User and Environment
 .env

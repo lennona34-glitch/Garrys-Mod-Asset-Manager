@@ -413,6 +413,50 @@ function setupEventHandlers() {
         });
     });
 
+    // Workshop Hide Subscribed Toggle
+    const chkHideWs = document.getElementById('chkHideSubscribedWs');
+    if (chkHideWs) {
+        chkHideWs.checked = localStorage.getItem('gmod_ws_hide_subscribed') !== 'false';
+        chkHideWs.addEventListener('change', () => {
+            localStorage.setItem('gmod_ws_hide_subscribed', chkHideWs.checked.toString());
+            if (state.wsItems && state.wsItems.length > 0) {
+                renderWorkshopGrid(state.wsItems);
+            }
+        });
+    }
+
+    // Wireless Controller Tuning
+    const btnController = document.getElementById('btnApplyControllerTuning');
+    const optControllerPreset = document.getElementById('optControllerPreset');
+    if (optControllerPreset) {
+        const savedPreset = localStorage.getItem('gmod_controller_preset') || 'smooth';
+        optControllerPreset.value = savedPreset;
+    }
+    if (btnController && optControllerPreset) {
+        btnController.addEventListener('click', async () => {
+            const preset = optControllerPreset.value;
+            btnController.disabled = true;
+            btnController.innerHTML = `<span>Applying Tuning...</span>`;
+            try {
+                const res = await window.api.applyControllerTuning(preset);
+                if (res.success) {
+                    localStorage.setItem('gmod_controller_preset', preset);
+                    showToast(`🎮 Wireless controller tuned (${preset})! Look: ${res.yawSens}, Mouse Sens: ${res.mouseSens}`, 'success');
+                } else {
+                    showToast(`Failed: ${res.error}`, 'error');
+                }
+            } catch (err) {
+                showToast(`Tuning error: ${err.message}`, 'error');
+            } finally {
+                btnController.disabled = false;
+                btnController.innerHTML = `
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <span>Re-Apply Controller Tuning</span>
+                `;
+            }
+        });
+    }
+
     // Storage Purge
     document.getElementById('btnCleanAllCache').addEventListener('click', async () => {
         if (confirm('Are you sure you want to clean the server download cache and temporary files? This is safe and will reclaim disk space.')) {
@@ -1129,7 +1173,54 @@ function renderWorkshopGrid(items) {
     const grid = document.getElementById('workshopGrid');
     grid.innerHTML = '';
 
-    items.forEach(item => {
+    // Collect all installed workshop IDs from addons and maps
+    const installedIds = new Set();
+    (state.addons || []).forEach(a => {
+        if (a.workshopId) installedIds.add(String(a.workshopId));
+    });
+    (state.maps || []).forEach(m => {
+        if (m.workshopId) installedIds.add(String(m.workshopId));
+    });
+
+    const hideSubscribed = localStorage.getItem('gmod_ws_hide_subscribed') !== 'false';
+    const displayItems = hideSubscribed
+        ? items.filter(item => !installedIds.has(String(item.id)))
+        : items;
+    const hiddenCount = items.length - displayItems.length;
+
+    const statusEl = document.getElementById('wsDiscoveryStatus');
+    if (statusEl) {
+        if (hideSubscribed && hiddenCount > 0) {
+            statusEl.textContent = `Showing ${displayItems.length} fresh discoveries (${hiddenCount} owned hidden)`;
+        } else {
+            statusEl.textContent = `Showing ${displayItems.length} items`;
+        }
+    }
+
+    if (displayItems.length === 0) {
+        grid.innerHTML = `
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <h3>All ${items.length} items are already in your library!</h3>
+                <p>You have already subscribed to every item in this query. Uncheck "Hide items I already have" to see them, or search for other keywords.</p>
+                <button class="btn btn-secondary btn-sm" id="btnShowAllOwnedWs" style="margin-top: 12px;">Show Owned Items</button>
+            </div>
+        `;
+        const btnShowOwned = document.getElementById('btnShowAllOwnedWs');
+        if (btnShowOwned) {
+            btnShowOwned.addEventListener('click', () => {
+                const chk = document.getElementById('chkHideSubscribedWs');
+                if (chk) {
+                    chk.checked = false;
+                    localStorage.setItem('gmod_ws_hide_subscribed', 'false');
+                    renderWorkshopGrid(items);
+                }
+            });
+        }
+        return;
+    }
+
+    displayItems.forEach(item => {
         const card = document.createElement('div');
         card.className = 'ws-item-card';
 
@@ -1137,7 +1228,7 @@ function renderWorkshopGrid(items) {
             ? `<img src="${item.previewUrl}" alt="${item.title}">`
             : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;">No Image</div>`;
 
-        const isSubscribedLocally = state.addons.some(a => a.workshopId === String(item.id));
+        const isSubscribedLocally = installedIds.has(String(item.id));
 
         card.innerHTML = `
             <div class="ws-item-thumb">
@@ -1785,17 +1876,27 @@ function renderDiagnostics() {
 
     // 5. Resolved & Healthy Section
     if (res.resolved && res.resolved.length > 0) {
+        const hidePacks = localStorage.getItem('gmod_hide_recommended_packs') !== 'false'; // default to hidden
+        const hasAnyPacks = res.resolved.some(item => item.recommendedPacks && item.recommendedPacks.length > 0);
+
         const group = document.createElement('div');
         group.className = 'doctor-resolved-group';
         group.innerHTML = `
-            <div class="doctor-section-group-title" style="color: #34d399; margin-bottom: 14px;">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                <span>Resolved & Healthy Status (${res.resolved.length})</span>
+            <div class="doctor-section-group-title" style="color: #34d399; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Resolved & Healthy Status (${res.resolved.length})</span>
+                </div>
+                ${hasAnyPacks ? `
+                    <button class="btn btn-secondary btn-xs btn-toggle-packs" style="font-size: 11px; padding: 3px 10px; color: var(--text-secondary);">
+                        ${hidePacks ? '📦 Show Available Asset Packs' : '🙈 Hide Asset Packs'}
+                    </button>
+                ` : ''}
             </div>
             <div class="doctor-resolved-list">
                 ${res.resolved.map(item => {
                     let packsHtml = '';
-                    if (item.recommendedPacks && item.recommendedPacks.length > 0) {
+                    if (!hidePacks && item.recommendedPacks && item.recommendedPacks.length > 0) {
                         packsHtml = `
                             <div class="doctor-resolved-packs-section" style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.08);">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
@@ -1847,6 +1948,16 @@ function renderDiagnostics() {
                 }).join('')}
             </div>
         `;
+
+        const btnTogglePacks = group.querySelector('.btn-toggle-packs');
+        if (btnTogglePacks) {
+            btnTogglePacks.addEventListener('click', () => {
+                const nextState = !hidePacks;
+                localStorage.setItem('gmod_hide_recommended_packs', nextState.toString());
+                showToast(nextState ? 'Asset packs hidden' : 'Asset packs shown', 'info');
+                renderDiagnostics();
+            });
+        }
 
         group.querySelectorAll('.btn-undo-conflict').forEach(btn => {
             btn.addEventListener('click', async () => {

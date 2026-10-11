@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('api', {
     subscribeMissingBases: (workshopIds) => ipcRenderer.invoke('subscribe-missing-bases', workshopIds),
     getPublishNavmeshMeta: (mapName) => ipcRenderer.invoke('get-publish-navmesh-meta', mapName),
     publishNavmesh: (options) => ipcRenderer.invoke('publish-navmesh', options),
+    applyControllerTuning: (preset) => ipcRenderer.invoke('apply-controller-tuning', preset),
     onNavmeshCompleted: (callback) => ipcRenderer.on('navmesh-completed', (_event, mapName) => callback(mapName)),
     onNavmeshProgress: (callback) => ipcRenderer.on('navmesh-progress', (_event, data) => callback(data))
 });

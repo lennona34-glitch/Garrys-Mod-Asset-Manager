@@ -355,3 +355,94 @@ ipcMain.handle('publish-navmesh', async (event, { mapName, title, description, t
     return await publishNavmeshToWorkshop(currentGmodInfo, { mapName, title, description, tags }, nativeImage);
 });
 
+function applyControllerTuning(gmodInfo, preset = 'smooth') {
+    if (!gmodInfo || !gmodInfo.garrysmodDir) return { success: false, error: 'GMod path not found' };
+    const cfgDir = path.join(gmodInfo.garrysmodDir, 'cfg');
+    if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
+
+    let yawSens = '-0.55';
+    let pitchSens = '0.45';
+    let accelScale = '0.5';
+    let accelMax = '1.0';
+    let mouseSens = '2.2';
+
+    if (preset === 'cinematic') {
+        yawSens = '-0.35';
+        pitchSens = '0.30';
+        accelScale = '0.3';
+        accelMax = '0.8';
+        mouseSens = '1.6';
+    } else if (preset === 'arcade') {
+        yawSens = '-0.85';
+        pitchSens = '0.65';
+        accelScale = '0.8';
+        accelMax = '1.4';
+        mouseSens = '3.0';
+    }
+
+    const autoexecPath = path.join(cfgDir, 'autoexec.cfg');
+    const configPath = path.join(cfgDir, 'config.cfg');
+
+    const controllerBlock = `// --- Smooth Wireless Controller / Gamepad Tuning ---
+// Fixes wild spinning, eliminates 2.0x acceleration spikes, adds comfortable deadzones
+joystick "1"
+joy_advanced "1"
+joy_name "Xbox360 controller"
+
+// Look Sensitivity (Yaw / Pitch) - Smooth, controllable aiming
+joy_yawsensitivity "${yawSens}"
+joy_pitchsensitivity "${pitchSens}"
+joy_yawthreshold "0.15"
+joy_pitchthreshold "0.15"
+
+// Look Acceleration Curve - Eliminates the wild 2.0x sudden spin
+joy_accelscale "${accelScale}"
+joy_accelmax "${accelMax}"
+joy_response_look "1"
+joy_lowend "0.65"
+joy_lowmap "0.15"
+joy_autoaimdampen "0.5"
+joy_autoaimdampenrange "0.85"
+
+// Movement Sensitivity (Forward / Strafe) - Smooth walking to running
+joy_forwardsensitivity "-0.85"
+joy_sidesensitivity "0.85"
+joy_forwardthreshold "0.15"
+joy_sidethreshold "0.15"
+joy_response_move "1"
+
+// Mouse Sensitivity Fallback (For Steam Input Mouse Emulation)
+sensitivity "${mouseSens}"
+m_customaccel "0"`;
+
+    // 1. Update autoexec.cfg
+    let autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
+    if (autoexecContent.includes('// --- Smooth Wireless Controller')) {
+        autoexecContent = autoexecContent.replace(/\/\/ --- Smooth Wireless Controller[\s\S]*?m_customaccel "0"/, controllerBlock.trim());
+    } else {
+        autoexecContent += `\n\n${controllerBlock}\n`;
+    }
+    fs.writeFileSync(autoexecPath, autoexecContent, 'utf8');
+
+    // 2. Update config.cfg if present
+    if (fs.existsSync(configPath)) {
+        try {
+            let configContent = fs.readFileSync(configPath, 'utf8');
+            configContent = configContent.replace(/joy_yawsensitivity "[^"]*"/, `joy_yawsensitivity "${yawSens}"`);
+            configContent = configContent.replace(/joy_pitchsensitivity "[^"]*"/, `joy_pitchsensitivity "${pitchSens}"`);
+            configContent = configContent.replace(/joy_accelscale "[^"]*"/, `joy_accelscale "${accelScale}"`);
+            configContent = configContent.replace(/joy_accelmax "[^"]*"/, `joy_accelmax "${accelMax}"`);
+            configContent = configContent.replace(/sensitivity "[^"]*"/, `sensitivity "${mouseSens}"`);
+            fs.writeFileSync(configPath, configContent, 'utf8');
+        } catch (_) {}
+    }
+
+    return { success: true, preset, yawSens, pitchSens, mouseSens };
+}
+
+ipcMain.handle('apply-controller-tuning', async (event, preset = 'smooth') => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return applyControllerTuning(currentGmodInfo, preset);
+});
+
+
