@@ -439,6 +439,34 @@ async function runDiagnostics(gmodInfo) {
         });
     }
 
+    // Check Wireless Controller / Gamepad Tuning
+    if (gmodInfo && gmodInfo.garrysmodDir) {
+        const autoexecPath = path.join(gmodInfo.garrysmodDir, 'cfg', 'autoexec.cfg');
+        const configPath = path.join(gmodInfo.garrysmodDir, 'cfg', 'config.cfg');
+        const autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
+        const configContent = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
+
+        const isTuned = autoexecContent.includes('// --- Smooth Wireless Controller') ||
+                        autoexecContent.includes('joy_accelscale "0.5"') ||
+                        (configContent.includes('joy_accelscale "0.5"') && !autoexecContent.includes('joy_accelscale "2.0"'));
+
+        if (isTuned) {
+            resolved.push({
+                key: 'controller_tuning',
+                title: '🎮 Wireless Controller & Gamepad: Calibrated & Smooth',
+                detail: 'Stick acceleration curve tuned (0.5x), look sensitivity smoothed (-0.55 / 0.45), and 0.15 anti-drift deadzones active.'
+            });
+        } else {
+            recommendations.push({
+                type: 'controller_tuning',
+                title: 'Gamepad & Wireless Controller Optimization Available',
+                message: "Garry's Mod default 2004 controller settings cause sudden 2.0x acceleration spikes, high yaw sensitivity, and violent spinning on wireless Xbox/PlayStation controllers.",
+                solution: 'Apply the built-in Smooth Aiming calibration to eliminate acceleration spikes, smooth camera turning, and add deadzones.',
+                actionText: '⚡ Calibrate Controller (Smooth Aiming)'
+            });
+        }
+    }
+
     return {
         issues,
         resolved,

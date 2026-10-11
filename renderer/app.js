@@ -1519,7 +1519,8 @@ function renderDiagnostics() {
     if (!container) return;
     container.innerHTML = '';
 
-    const isAllClean = res.issues.length === 0 && activeNavRecs.length === 0;
+    const controllerRecs = (res.recommendations || []).filter(r => r.type === 'controller_tuning');
+    const isAllClean = res.issues.length === 0 && activeNavRecs.length === 0 && controllerRecs.length === 0;
 
     if (isAllClean) {
         const cleanCard = document.createElement('div');
@@ -1756,6 +1757,67 @@ function renderDiagnostics() {
             card.querySelector('.btn-goto-addons').addEventListener('click', () => {
                 const addonsTab = document.querySelector('.nav-item[data-tab="addons"]');
                 if (addonsTab) addonsTab.click();
+            });
+
+            group.appendChild(card);
+        });
+
+        container.appendChild(group);
+    }
+
+    // 3.5 Wireless Controller / Gamepad Optimization
+    if (controllerRecs.length > 0) {
+        const group = document.createElement('div');
+        group.className = 'doctor-section-group';
+        group.innerHTML = `
+            <div class="doctor-section-group-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                <span>Wireless Controller & Gamepad Optimization</span>
+            </div>
+        `;
+
+        controllerRecs.forEach(rec => {
+            const card = document.createElement('div');
+            card.className = 'doctor-card info-severity';
+            card.innerHTML = `
+                <div class="doctor-card-top">
+                    <span class="doctor-card-title">${rec.title}</span>
+                    <span class="doctor-card-badge" style="background: rgba(56, 189, 248, 0.2); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.4);">Input Calibration</span>
+                </div>
+                <div class="doctor-card-desc">
+                    ${rec.message}
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 4px; border-left: 3px solid var(--accent-cyan);">
+                        💡 ${rec.solution}
+                    </div>
+                </div>
+                <div class="doctor-card-actions" style="margin-top: 14px;">
+                    <button class="btn btn-primary btn-sm btn-tune-controller">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                        <span>${rec.actionText || '⚡ Calibrate Controller'}</span>
+                    </button>
+                    <button class="btn btn-secondary btn-sm btn-goto-controller-settings">
+                        <span>Presets in Settings</span>
+                    </button>
+                </div>
+            `;
+
+            card.querySelector('.btn-tune-controller').addEventListener('click', async () => {
+                const btn = card.querySelector('.btn-tune-controller');
+                btn.disabled = true;
+                btn.textContent = 'Applying Calibration...';
+                try {
+                    await window.api.applyControllerTuning('smooth');
+                    showToast('🎮 Gamepad calibrated to Smooth Aiming! Acceleration spikes eliminated.', 'success');
+                    await refreshDiagnostics();
+                } catch (err) {
+                    showToast('Failed to tune controller: ' + err.message, 'error');
+                    btn.disabled = false;
+                }
+            });
+
+            card.querySelector('.btn-goto-controller-settings').addEventListener('click', () => {
+                const settingsTab = document.querySelector('.nav-item[data-tab="settings"]');
+                if (settingsTab) settingsTab.click();
             });
 
             group.appendChild(card);
