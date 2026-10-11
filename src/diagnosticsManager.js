@@ -446,15 +446,16 @@ async function runDiagnostics(gmodInfo) {
         const autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
         const configContent = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
 
-        const isTuned = autoexecContent.includes('// --- Smooth Wireless Controller') ||
-                        autoexecContent.includes('joy_accelscale "0.5"') ||
-                        (configContent.includes('joy_accelscale "0.5"') && !autoexecContent.includes('joy_accelscale "2.0"'));
+        const isTuned = autoexecContent.includes('// --- Modern Tactical Wireless Controller') ||
+                        autoexecContent.includes('// --- Smooth Wireless Controller') ||
+                        autoexecContent.includes('joy_accelscale "0.35"') ||
+                        autoexecContent.includes('joy_accelscale "0.5"');
 
         if (isTuned) {
             resolved.push({
                 key: 'controller_tuning',
-                title: '🎮 Wireless Controller & Gamepad: Calibrated & Smooth',
-                detail: 'Stick acceleration curve tuned (0.5x), look sensitivity smoothed (-0.55 / 0.45), and 0.15 anti-drift deadzones active.'
+                title: '🎮 Modern Tactical Wireless Controller: Calibrated & Active',
+                detail: 'R1/B = Crouch, R3 = Toggle Constant Run, L3 = Chat, and 6/10 smooth look speed (-0.40 / 0.32).'
             });
         } else {
             recommendations.push({

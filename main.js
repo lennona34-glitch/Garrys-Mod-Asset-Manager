@@ -360,42 +360,43 @@ function applyControllerTuning(gmodInfo, preset = 'smooth') {
     const cfgDir = path.join(gmodInfo.garrysmodDir, 'cfg');
     if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
 
-    let yawSens = '-0.55';
-    let pitchSens = '0.45';
-    let accelScale = '0.5';
-    let accelMax = '1.0';
-    let mouseSens = '2.2';
+    let yawSens = '-0.40';
+    let pitchSens = '0.32';
+    let accelScale = '0.35';
+    let accelMax = '0.80';
+    let mouseSens = '1.65';
 
     if (preset === 'cinematic') {
-        yawSens = '-0.35';
-        pitchSens = '0.30';
-        accelScale = '0.3';
-        accelMax = '0.8';
-        mouseSens = '1.6';
+        yawSens = '-0.25';
+        pitchSens = '0.20';
+        accelScale = '0.20';
+        accelMax = '0.60';
+        mouseSens = '1.20';
     } else if (preset === 'arcade') {
-        yawSens = '-0.85';
-        pitchSens = '0.65';
-        accelScale = '0.8';
-        accelMax = '1.4';
-        mouseSens = '3.0';
+        yawSens = '-0.60';
+        pitchSens = '0.50';
+        accelScale = '0.50';
+        accelMax = '1.10';
+        mouseSens = '2.40';
     }
 
     const autoexecPath = path.join(cfgDir, 'autoexec.cfg');
     const configPath = path.join(cfgDir, 'config.cfg');
+    const controller360Path = path.join(cfgDir, '360controller.cfg');
 
-    const controllerBlock = `// --- Smooth Wireless Controller / Gamepad Tuning ---
-// Fixes wild spinning, eliminates 2.0x acceleration spikes, adds comfortable deadzones
+    const controllerBlock = `// --- Modern Tactical Wireless Controller / Gamepad Tuning ---
+// 6/10 Calibrated Speed: Smooth aiming, 0.35x accel, no spinning spikes
 joystick "1"
 joy_advanced "1"
 joy_name "Xbox360 controller"
 
-// Look Sensitivity (Yaw / Pitch) - Smooth, controllable aiming
+// Look Sensitivity (Yaw / Pitch) - 6/10 Calibrated Smooth Look Speed
 joy_yawsensitivity "${yawSens}"
 joy_pitchsensitivity "${pitchSens}"
 joy_yawthreshold "0.15"
 joy_pitchthreshold "0.15"
 
-// Look Acceleration Curve - Eliminates the wild 2.0x sudden spin
+// Look Acceleration Curve - Tamed 0.35x curve (Eliminates sudden spin spikes)
 joy_accelscale "${accelScale}"
 joy_accelmax "${accelMax}"
 joy_response_look "1"
@@ -404,21 +405,53 @@ joy_lowmap "0.15"
 joy_autoaimdampen "0.5"
 joy_autoaimdampenrange "0.85"
 
-// Movement Sensitivity (Forward / Strafe) - Smooth walking to running
+// Movement Sensitivity (Forward / Strafe)
 joy_forwardsensitivity "-0.85"
 joy_sidesensitivity "0.85"
 joy_forwardthreshold "0.15"
 joy_sidethreshold "0.15"
 joy_response_move "1"
 
-// Mouse Sensitivity Fallback (For Steam Input Mouse Emulation)
+// Mouse Sensitivity Fallback (Steam Input Emulation)
 sensitivity "${mouseSens}"
-m_customaccel "0"`;
+m_customaccel "0"
+
+// --- Modernized Button Layout ---
+// R3 Toggle Sprint (Click to run continuously without holding)
+alias sprint_toggle "sprint_on"
+alias sprint_on "+speed; alias sprint_toggle sprint_off"
+alias sprint_off "-speed; alias sprint_toggle sprint_on"
+
+// B Button = Crouch (No more accidental chat!)
+bind "JOY2" "+duck"
+bind "b" "+duck"
+
+// R1 (Right Bumper) = Crouch
+bind "JOY6" "+duck"
+
+// R3 (Right Stick Click) = Constant Running Toggle
+bind "JOY10" "sprint_toggle"
+
+// L3 (Left Stick Click) = Console Chat Box
+bind "JOY9" "messagemode"
+
+// A = Jump, X = Use, Y = Reload, L1 = Prev Weapon
+bind "JOY1" "+jump"
+bind "JOY3" "+use"
+bind "JOY4" "+reload"
+bind "JOY5" "invprev"
+bind "POV_UP" "undo"
+bind "POV_RIGHT" "+voicerecord"
+bind "POV_DOWN" "noclip"
+bind "POV_LEFT" "+menu"`;
 
     // 1. Update autoexec.cfg
     let autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
-    if (autoexecContent.includes('// --- Smooth Wireless Controller')) {
-        autoexecContent = autoexecContent.replace(/\/\/ --- Smooth Wireless Controller[\s\S]*?m_customaccel "0"/, controllerBlock.trim());
+    if (autoexecContent.includes('// --- Modern Tactical Wireless Controller') || autoexecContent.includes('// --- Smooth Wireless Controller')) {
+        autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?bind "POV_LEFT" "\+menu"/, controllerBlock.trim());
+        if (!autoexecContent.includes('bind "POV_LEFT" "+menu"')) {
+            autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?m_customaccel "0"/, controllerBlock.trim());
+        }
     } else {
         autoexecContent += `\n\n${controllerBlock}\n`;
     }
@@ -433,7 +466,24 @@ m_customaccel "0"`;
             configContent = configContent.replace(/joy_accelscale "[^"]*"/, `joy_accelscale "${accelScale}"`);
             configContent = configContent.replace(/joy_accelmax "[^"]*"/, `joy_accelmax "${accelMax}"`);
             configContent = configContent.replace(/sensitivity "[^"]*"/, `sensitivity "${mouseSens}"`);
+            configContent = configContent.replace(/bind "b" "[^"]*"/, `bind "b" "+duck"`);
             fs.writeFileSync(configPath, configContent, 'utf8');
+        } catch (_) {}
+    }
+
+    // 3. Update 360controller.cfg if present
+    if (fs.existsSync(controller360Path)) {
+        try {
+            let c360 = fs.readFileSync(controller360Path, 'utf8');
+            c360 = c360.replace(/joy_pitchsensitivity [0-9.-]+/, `joy_pitchsensitivity ${pitchSens}`);
+            c360 = c360.replace(/joy_yawsensitivity [0-9.-]+/, `joy_yawsensitivity ${yawSens}`);
+            c360 = c360.replace(/joy_accelscale [0-9.-]+/, `joy_accelscale ${accelScale}`);
+            c360 = c360.replace(/joy_accelmax [0-9.-]+/, `joy_accelmax ${accelMax}`);
+            c360 = c360.replace(/bind "JOY2" "[^"]*"/, `bind "JOY2" "+duck"`);
+            c360 = c360.replace(/bind "JOY6" "[^"]*"/, `bind "JOY6" "+duck"`);
+            c360 = c360.replace(/bind "JOY9" "[^"]*"/, `bind "JOY9" "messagemode"`);
+            c360 = c360.replace(/bind "JOY10" "[^"]*"/, `bind "JOY10" "sprint_toggle"`);
+            fs.writeFileSync(controller360Path, c360, 'utf8');
         } catch (_) {}
     }
 

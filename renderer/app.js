@@ -1052,6 +1052,15 @@ async function openPublishNavModal(mapName) {
         } else {
             iconPreview.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="%231e293b"/><text x="36" y="42" font-family="sans-serif" font-weight="bold" font-size="10" fill="%2338bdf8" text-anchor="middle">NAVMESH</text></svg>';
         }
+
+        if (!meta.navSize || meta.navSize === 0) {
+            btnConfirm.disabled = true;
+            statusAlert.style.display = 'block';
+            statusAlert.style.background = 'rgba(239, 68, 68, 0.15)';
+            statusAlert.style.color = '#f87171';
+            statusAlert.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            statusAlert.innerHTML = `⚠️ NavMesh file '${mapName}.nav' not detected in garrysmod/maps yet. Please run <strong>⚡ Auto-Fix</strong> on this map first so GMod can calculate it!`;
+        }
     } catch (err) {
         showToast('Failed to load map metadata: ' + err.message, 'error');
     }
@@ -1902,12 +1911,15 @@ function renderDiagnostics() {
             card.querySelectorAll('.btn-gen-nav').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     const mapName = btn.getAttribute('data-map');
-                    showToast(`Launching ${mapName} with Autopilot... Touch nothing, GMod will auto-generate!`, 'info');
+                    btn.disabled = true;
+                    btn.innerHTML = `<span class="spinner" style="width: 10px; height: 10px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; display: inline-block;"></span> Generating...`;
+                    showToast(`Launching ${mapName} with Autopilot... Please wait ~15s while GMod computes the mesh!`, 'info');
                     try {
                         await window.api.generateMapNavmesh(mapName);
-                        showToast(`Autopilot active for ${mapName}! GMod is auto-generating your Navmesh now.`, 'success');
                     } catch (err) {
                         showToast(`Failed to launch map: ${err.message}`, 'error');
+                        btn.disabled = false;
+                        btn.innerHTML = `⚡ Auto-Fix`;
                     }
                 });
             });
