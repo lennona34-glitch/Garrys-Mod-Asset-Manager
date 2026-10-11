@@ -127,9 +127,56 @@ function buildGmodInfo(gmodRoot, steamPath = null, steamLibraryPath = null) {
     };
 }
 
+function getAllSubscribedWorkshopIds(gmodInfo) {
+    const ids = new Set();
+    if (!gmodInfo) return Array.from(ids);
+
+    // 1. Scan Steam Workshop content directory (steamapps/workshop/content/4000)
+    if (gmodInfo.workshopDir && fs.existsSync(gmodInfo.workshopDir)) {
+        try {
+            const entries = fs.readdirSync(gmodInfo.workshopDir, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.isDirectory() && /^\d+$/.test(entry.name)) {
+                    const itemFolder = path.join(gmodInfo.workshopDir, entry.name);
+                    try {
+                        const files = fs.readdirSync(itemFolder);
+                        if (files.length > 0) {
+                            ids.add(String(entry.name));
+                        }
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+    }
+
+    // 2. Scan all Steam userdata 4000_subscriptions.vdf files
+    try {
+        const steamPath = gmodInfo.steamPath || (gmodInfo.gmodRoot ? path.resolve(gmodInfo.gmodRoot, '..', '..', '..') : null);
+        if (steamPath) {
+            const userDataDir = path.join(steamPath, 'userdata');
+            if (fs.existsSync(userDataDir)) {
+                const users = fs.readdirSync(userDataDir);
+                for (const user of users) {
+                    const subFile = path.join(userDataDir, user, 'ugc', '4000_subscriptions.vdf');
+                    if (fs.existsSync(subFile)) {
+                        const content = fs.readFileSync(subFile, 'utf8');
+                        const matches = content.matchAll(/"publishedfileid"\s+"(\d+)"/g);
+                        for (const m of matches) {
+                            ids.add(String(m[1]));
+                        }
+                    }
+                }
+            }
+        }
+    } catch (_) {}
+
+    return Array.from(ids);
+}
+
 module.exports = {
     getSteamPathFromRegistry,
     parseLibraryFolders,
     detectGmodPaths,
-    buildGmodInfo
+    buildGmodInfo,
+    getAllSubscribedWorkshopIds
 };

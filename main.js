@@ -3,7 +3,7 @@ app.disableHardwareAcceleration();
 const path = require('path');
 const fs = require('fs');
 
-const { detectGmodPaths } = require('./src/steamDetector');
+const { detectGmodPaths, getAllSubscribedWorkshopIds } = require('./src/steamDetector');
 const { scanAllMaps, launchMap, extractMapToNative, injectNavmeshAutopilot } = require('./src/mapManager');
 const { scanAllAddons, toggleAddonState, inspectGma, unpackAddon, packAddonFolder, deleteAddon } = require('./src/addonManager');
 const { analyzeStorage, cleanTarget } = require('./src/storageCleaner');
@@ -219,6 +219,11 @@ ipcMain.handle('run-diagnostics', async () => {
 ipcMain.handle('fix-addon-conflict', async (event, conflictKey) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     return fixAddonConflict(currentGmodInfo, conflictKey);
+});
+
+ipcMain.handle('get-subscribed-workshop-ids', async () => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return getAllSubscribedWorkshopIds(currentGmodInfo);
 });
 
 ipcMain.handle('generate-map-navmesh', async (event, mapName) => {

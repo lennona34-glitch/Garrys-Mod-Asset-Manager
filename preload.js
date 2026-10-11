@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('api', {
     
     // Workshop
     searchWorkshop: (options) => ipcRenderer.invoke('search-workshop', options),
+    getSubscribedWorkshopIds: () => ipcRenderer.invoke('get-subscribed-workshop-ids'),
     openSteamClient: (workshopId) => ipcRenderer.invoke('open-steam-client', workshopId),
     openSteamWorkshopHub: () => ipcRenderer.invoke('open-steam-workshop-hub'),
     openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url),

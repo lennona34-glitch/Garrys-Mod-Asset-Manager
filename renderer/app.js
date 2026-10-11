@@ -3,6 +3,7 @@ const state = {
     gmodInfo: null,
     maps: [],
     addons: [],
+    subscribedWorkshopIds: [],
     presets: [],
     storage: null,
     currentTab: 'maps',
@@ -143,13 +144,17 @@ async function loadInitialData() {
         updateGmodStatus();
 
         if (state.gmodInfo && state.gmodInfo.gmodRoot) {
-            // High-speed parallel startup: Maps, Addons, Diagnostics, Presets
-            await Promise.all([
+            // High-speed parallel startup: Maps, Addons, Subscribed IDs, Diagnostics, Presets
+            const [maps, addons, subIds] = await Promise.all([
                 refreshMaps(),
                 refreshAddons(),
+                window.api.getSubscribedWorkshopIds ? window.api.getSubscribedWorkshopIds().catch(() => []) : Promise.resolve([]),
                 refreshDiagnostics(),
                 refreshPresets()
             ]);
+            if (Array.isArray(subIds) && subIds.length > 0) {
+                state.subscribedWorkshopIds = subIds;
+            }
 
             // Background pre-fetch of workshop (non-blocking)
             setTimeout(() => {
@@ -247,6 +252,9 @@ function setupEventHandlers() {
     document.getElementById('btnRefresh').addEventListener('click', async () => {
         showToast('Refreshing data...', 'info');
         await Promise.all([refreshMaps(), refreshAddons(), refreshStorage(), refreshDiagnostics()]);
+        if (state.currentTab === 'workshop' && state.wsItems && state.wsItems.length > 0) {
+            renderWorkshopGrid(state.wsItems);
+        }
         showToast('Data refreshed successfully', 'success');
     });
 
@@ -702,10 +710,22 @@ function launchSelectedMap(mapName) {
 async function refreshAddons() {
     try {
         state.addons = await window.api.scanAddons();
+        if (window.api.getSubscribedWorkshopIds) {
+            try {
+                const subIds = await window.api.getSubscribedWorkshopIds();
+                if (Array.isArray(subIds)) {
+                    state.subscribedWorkshopIds = subIds;
+                }
+            } catch (_) {}
+        }
         document.getElementById('addonsCountBadge').textContent = state.addons.length;
         const subCountEl = document.getElementById('wsSubscribedCount');
         if (subCountEl) {
-            subCountEl.textContent = state.addons.filter(a => a.isWorkshop).length;
+            const totalSubscribed = Math.max(
+                state.addons.filter(a => a.isWorkshop).length,
+                (state.subscribedWorkshopIds || []).length
+            );
+            subCountEl.textContent = totalSubscribed;
         }
         renderAddons();
     } catch (err) {
@@ -1152,6 +1172,15 @@ async function executeWorkshopSearch() {
     `;
 
     try {
+        if (!state.subscribedWorkshopIds || state.subscribedWorkshopIds.length === 0) {
+            try {
+                if (window.api.getSubscribedWorkshopIds) {
+                    const ids = await window.api.getSubscribedWorkshopIds();
+                    if (Array.isArray(ids)) state.subscribedWorkshopIds = ids;
+                }
+            } catch (_) {}
+        }
+
         const items = await window.api.searchWorkshop({ query, tag, sort });
         state.wsItems = items;
         state.wsLoaded = true;
@@ -1182,8 +1211,8 @@ function renderWorkshopGrid(items) {
     const grid = document.getElementById('workshopGrid');
     grid.innerHTML = '';
 
-    // Collect all installed workshop IDs from addons and maps
-    const installedIds = new Set();
+    // Collect all installed workshop IDs from Steam UGC subscriptions, addons, and maps
+    const installedIds = new Set((state.subscribedWorkshopIds || []).map(String));
     (state.addons || []).forEach(a => {
         if (a.workshopId) installedIds.add(String(a.workshopId));
     });
@@ -1242,7 +1271,7 @@ function renderWorkshopGrid(items) {
         card.innerHTML = `
             <div class="ws-item-thumb">
                 ${thumb}
-                ${isSubscribedLocally ? '<span class="badge" style="position:absolute;top:10px;right:10px;background:var(--accent-green);color:white;">✓ Installed</span>' : ''}
+                ${isSubscribedLocally ? '<span class="badge" style="position:absolute;top:10px;right:10px;background:var(--accent-green);color:white;" title="Subscribed in Steam">✓ Subscribed</span>' : ''}
             </div>
             <div class="ws-item-body">
                 <div class="ws-item-title" title="${item.title}">${item.title}</div>
@@ -1252,7 +1281,7 @@ function renderWorkshopGrid(items) {
                 </div>
             </div>
             <div class="ws-item-footer">
-                <button class="btn btn-primary btn-sm btn-open-steam" style="flex:1;" title="Open in your desktop Steam client to subscribe">
+                <button class="btn ${isSubscribedLocally ? 'btn-secondary' : 'btn-primary'} btn-sm btn-open-steam" style="flex:1;" title="${isSubscribedLocally ? 'Manage or view this item in your Steam client' : 'Open in your desktop Steam client to subscribe'}">
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
                     <span>${isSubscribedLocally ? 'Manage in Steam' : 'Subscribe in Steam'}</span>
                 </button>
@@ -1265,6 +1294,29 @@ function renderWorkshopGrid(items) {
         card.querySelector('.btn-open-steam').addEventListener('click', () => {
             window.api.openSteamClient(item.id);
             showToast(`Opening "${item.title}" in Steam client...`, 'info');
+            // Optimistically mark as subscribed so UI updates immediately
+            if (!installedIds.has(String(item.id))) {
+                if (!state.subscribedWorkshopIds) state.subscribedWorkshopIds = [];
+                state.subscribedWorkshopIds.push(String(item.id));
+                installedIds.add(String(item.id));
+                const btn = card.querySelector('.btn-open-steam');
+                if (btn) {
+                    btn.classList.remove('btn-primary');
+                    btn.classList.add('btn-secondary');
+                    const span = btn.querySelector('span');
+                    if (span) span.textContent = 'Manage in Steam';
+                    btn.title = 'Manage or view this item in your Steam client';
+                }
+                const thumbEl = card.querySelector('.ws-item-thumb');
+                if (thumbEl && !thumbEl.querySelector('.badge')) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge';
+                    badge.style.cssText = 'position:absolute;top:10px;right:10px;background:var(--accent-green);color:white;';
+                    badge.title = 'Subscribed in Steam';
+                    badge.textContent = '✓ Subscribed';
+                    thumbEl.appendChild(badge);
+                }
+            }
         });
 
         card.querySelector('.btn-open-browser').addEventListener('click', () => {

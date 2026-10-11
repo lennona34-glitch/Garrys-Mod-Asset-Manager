@@ -32,52 +32,34 @@ async function scanAllAddons(gmodInfo) {
 
                 for (const file of files) {
                     const lower = file.toLowerCase();
-                    if (lower.endsWith('.gma') || lower.endsWith('.gma.disabled')) {
+                    if (lower.endsWith('.gma') || lower.endsWith('.gma.disabled') || lower.endsWith('.bin')) {
                         const fullPath = path.join(folderPath, file);
                         const isEnabled = !lower.endsWith('.disabled') && !noMountSet.has(itemFolder.name);
                         const stats = fs.statSync(fullPath);
 
+                        let header = null;
                         try {
-                            const header = parseGmaHeader(fullPath);
-                            if (header) {
-                                addons.push({
-                                    id: `workshop_${itemFolder.name}`,
-                                    workshopId: itemFolder.name,
-                                    name: header.name || itemFolder.name,
-                                    author: header.author,
-                                    description: header.description,
-                                    category: header.category,
-                                    tags: header.tags,
-                                    filePath: fullPath,
-                                    fileSize: stats.size,
-                                    filesCount: header.filesCount,
-                                    modified: stats.mtime,
-                                    isEnabled,
-                                    isWorkshop: true,
-                                    mapsCount: header.maps.length,
-                                    previewUrl: null // will be enriched
-                                });
-                            }
-                        } catch (err) {
-                            // GMA parsing error fallback
-                            addons.push({
-                                id: `workshop_${itemFolder.name}`,
-                                workshopId: itemFolder.name,
-                                name: itemFolder.name,
-                                author: 'Unknown',
-                                description: '',
-                                category: 'Unknown',
-                                tags: [],
-                                filePath: fullPath,
-                                fileSize: stats.size,
-                                filesCount: 0,
-                                modified: stats.mtime,
-                                isEnabled,
-                                isWorkshop: true,
-                                mapsCount: 0,
-                                previewUrl: null
-                            });
-                        }
+                            header = parseGmaHeader(fullPath);
+                        } catch (_) {}
+
+                        addons.push({
+                            id: `workshop_${itemFolder.name}`,
+                            workshopId: itemFolder.name,
+                            name: (header && header.name) ? header.name : itemFolder.name,
+                            author: (header && header.author) ? header.author : 'Steam Workshop',
+                            description: (header && header.description) ? header.description : '',
+                            category: (header && header.category) ? header.category : (header && header.maps && header.maps.length > 0 ? 'Map' : 'Addon'),
+                            tags: (header && header.tags) ? header.tags : [],
+                            filePath: fullPath,
+                            fileSize: stats.size,
+                            filesCount: (header && header.filesCount) ? header.filesCount : 1,
+                            modified: stats.mtime,
+                            isEnabled,
+                            isWorkshop: true,
+                            mapsCount: (header && header.maps) ? header.maps.length : 0,
+                            previewUrl: null // will be enriched
+                        });
+                        break;
                     }
                 }
             }
