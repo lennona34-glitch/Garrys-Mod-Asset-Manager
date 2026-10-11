@@ -254,9 +254,27 @@ function setupEventHandlers() {
     const btnRunDoctor = document.getElementById('btnRunDoctor');
     if (btnRunDoctor) {
         btnRunDoctor.addEventListener('click', async () => {
-            showToast('Running diagnostic scan...', 'info');
-            await refreshDiagnostics();
-            showToast('Diagnostics completed', 'success');
+            btnRunDoctor.disabled = true;
+            btnRunDoctor.innerHTML = `
+                <svg class="spin" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
+                <span>Scanning...</span>
+            `;
+            showToast('Refreshing maps & running diagnostic scan...', 'info');
+            try {
+                await Promise.all([refreshMaps(), refreshDiagnostics()]);
+                const totalMaps = (state.maps || []).length;
+                const unmeshed = (diagnosticResults && diagnosticResults.counts) ? diagnosticResults.counts.noNav : 0;
+                const meshed = Math.max(0, totalMaps - unmeshed);
+                showToast(`Scan complete: ${meshed} of ${totalMaps} maps meshed (${unmeshed} remaining)`, 'success');
+            } catch (err) {
+                showToast(`Scan error: ${err.message}`, 'error');
+            } finally {
+                btnRunDoctor.disabled = false;
+                btnRunDoctor.innerHTML = `
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    <span>Run Scan</span>
+                `;
+            }
         });
     }
 
@@ -266,17 +284,20 @@ function setupEventHandlers() {
         await window.api.toggleFullScreen();
         const layout = document.querySelector('.app-layout');
         const btnZen = document.getElementById('btnToggleZen');
-        const zenText = document.getElementById('zenBtnText');
 
         if (state.isZenMode) {
             layout.classList.add('zen-mode');
-            btnZen.classList.add('active');
-            zenText.textContent = 'Exit Zen (F11)';
+            if (btnZen) {
+                btnZen.classList.add('active');
+                btnZen.title = 'Exit Fullscreen Zen Mode (F11 / Esc)';
+            }
             showToast('Zen Mode active — Full screen immersion (F11 / Esc to exit)', 'info');
         } else {
             layout.classList.remove('zen-mode');
-            btnZen.classList.remove('active');
-            zenText.textContent = 'Zen Mode (F11)';
+            if (btnZen) {
+                btnZen.classList.remove('active');
+                btnZen.title = 'Toggle Fullscreen Zen Mode (F11)';
+            }
             showToast('Exited Zen Mode', 'info');
         }
     };
@@ -1712,7 +1733,7 @@ function renderDiagnostics() {
                 <div class="doctor-card-desc">
                     ${rec.message}
                     <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 4px; border-left: 3px solid var(--accent-blue);">
-                        💡 <strong>Don't play Nextbots on these maps?</strong> Campaign levels (like Silent Escape), horror maps, and driving roads have their own scripted AI and don't require a NavMesh. Click <strong>⚡ Dismiss All</strong> above to instantly clear your dashboard to 100% Healthy!
+                        💡 <strong>A map that doesn't seem to go away?</strong> Some maps (like Silent Escape story campaign, Slender Spongebob, and Lestnicha staircase) have custom scripted AI or lack player spawn entities, preventing GMod from auto-generating a mesh. Click the <strong>✕</strong> button next to any map to dismiss it, or click <strong>⚡ Dismiss All</strong> above to instantly clear your dashboard to 100% Healthy!
                     </div>
                 </div>
                 ${mapsChipsHtml}

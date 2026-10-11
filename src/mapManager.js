@@ -389,16 +389,43 @@ hook.Add("PlayerInitialSpawn", "AutoNavmeshAutopilot", function(ply)
         timer.Simple(2.5, function()
             if not IsValid(ply) then return end
             PrintMessage(HUD_PRINTCENTER, "AutoNav: Generating Fast NavMesh... Please wait ~3s!")
+            
+            -- Ensure player is grounded and add walkable seed (essential for maps without info_player_start)
+            pcall(function() ply:DropToFloor() end)
+            local pPos = ply:GetPos()
+            local tr = util.TraceLine({
+                start = pPos + Vector(0, 0, 60),
+                endpos = pPos - Vector(0, 0, 100000),
+                filter = ply
+            })
+            local seedPos = tr.Hit and tr.HitPos or pPos
+            local seedNormal = tr.Hit and tr.HitNormal or Vector(0, 0, 1)
+
+            if navmesh and navmesh.AddWalkableSeed then
+                pcall(function()
+                    navmesh.ClearWalkableSeeds()
+                    navmesh.AddWalkableSeed(seedPos, seedNormal)
+                end)
+            end
+
             ply:SendLua([[
                 surface.PlaySound("buttons/bell1.wav")
                 notification.AddLegacy("AutoNav: Fast NavMesh calculation starting...", NOTIFY_HINT, 5)
                 RunConsoleCommand("nav_quicksave", "1")
                 RunConsoleCommand("nav_max_view_distance", "1")
+                RunConsoleCommand("nav_mark_walkable")
             ]])
             game.ConsoleCommand("nav_quicksave 1\\n")
             game.ConsoleCommand("nav_max_view_distance 1\\n")
-            game.ConsoleCommand("nav_mark_walkable\\n")
-            game.ConsoleCommand("nav_generate\\n")
+
+            timer.Simple(0.5, function()
+                if navmesh and navmesh.BeginGeneration then
+                    local ok = pcall(function() navmesh.BeginGeneration() end)
+                    if not ok then game.ConsoleCommand("nav_generate\\n") end
+                else
+                    game.ConsoleCommand("nav_generate\\n")
+                end
+            end)
         end)
     end
 end)

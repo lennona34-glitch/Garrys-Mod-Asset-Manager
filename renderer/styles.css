@@ -378,9 +378,18 @@ body {
     color: var(--text-primary);
     background-color: var(--bg-card-hover);
 }
+.btn-icon.active {
+    color: var(--accent-cyan);
+    border-color: var(--accent-cyan);
+    background-color: rgba(6, 182, 212, 0.15);
+}
 .btn-icon svg {
     width: 16px;
     height: 16px;
+}
+.header-actions .btn {
+    height: 36px;
+    white-space: nowrap;
 }
 
 /* Filter Bar */
