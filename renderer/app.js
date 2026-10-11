@@ -18,6 +18,9 @@ const state = {
     wsMode: 'browse',
     wsLoaded: false,
     wsItems: [],
+    wsPage: 1,
+    wsHasMore: true,
+    wsLoadingMore: false,
     isZenMode: false
 };
 
@@ -238,6 +241,22 @@ function setupEventHandlers() {
         clearBtn.style.display = state.searchQuery ? 'block' : 'none';
         if (state.currentTab === 'maps') renderMaps();
         else if (state.currentTab === 'addons') renderAddons();
+        else if (state.currentTab === 'workshop') {
+            const wsIn = document.getElementById('wsSearchInput');
+            if (wsIn) {
+                wsIn.value = e.target.value;
+                const clearWs = document.getElementById('btnWsClearSearch');
+                if (clearWs) clearWs.style.display = wsIn.value ? 'block' : 'none';
+            }
+        }
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && state.currentTab === 'workshop') {
+            const wsIn = document.getElementById('wsSearchInput');
+            if (wsIn) wsIn.value = searchInput.value;
+            executeWorkshopSearch();
+        }
     });
 
     clearBtn.addEventListener('click', () => {
@@ -246,6 +265,15 @@ function setupEventHandlers() {
         clearBtn.style.display = 'none';
         if (state.currentTab === 'maps') renderMaps();
         else if (state.currentTab === 'addons') renderAddons();
+        else if (state.currentTab === 'workshop') {
+            const wsIn = document.getElementById('wsSearchInput');
+            if (wsIn) {
+                wsIn.value = '';
+                const clearWs = document.getElementById('btnWsClearSearch');
+                if (clearWs) clearWs.style.display = 'none';
+            }
+            executeWorkshopSearch();
+        }
     });
 
     // Refresh button
@@ -378,9 +406,58 @@ function setupEventHandlers() {
     document.getElementById('btnDisableAllAddons').addEventListener('click', () => bulkToggleAddons(false));
 
     // Workshop search & modes
-    document.getElementById('btnWsSearch').addEventListener('click', executeWorkshopSearch);
-    document.getElementById('wsSearchInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') executeWorkshopSearch();
+    function updateActiveChipFromSelects() {
+        const currentTag = document.getElementById('wsTagSelect').value;
+        const currentSort = document.getElementById('wsSortSelect').value;
+        document.querySelectorAll('#wsQuickFilterChips .chip').forEach(c => {
+            const cTag = c.getAttribute('data-wstag');
+            const cSort = c.getAttribute('data-wssort');
+            if (cTag === currentTag && cSort === currentSort) {
+                c.classList.add('active');
+            } else {
+                c.classList.remove('active');
+            }
+        });
+    }
+
+    document.getElementById('btnWsSearch').addEventListener('click', () => executeWorkshopSearch());
+
+    const wsSearchInput = document.getElementById('wsSearchInput');
+    const btnWsClearSearch = document.getElementById('btnWsClearSearch');
+    if (wsSearchInput) {
+        wsSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') executeWorkshopSearch();
+        });
+        wsSearchInput.addEventListener('input', () => {
+            if (btnWsClearSearch) {
+                btnWsClearSearch.style.display = wsSearchInput.value ? 'block' : 'none';
+            }
+            if (searchInput && state.currentTab === 'workshop') {
+                searchInput.value = wsSearchInput.value;
+                state.searchQuery = wsSearchInput.value.toLowerCase().trim();
+                clearBtn.style.display = state.searchQuery ? 'block' : 'none';
+            }
+        });
+    }
+
+    if (btnWsClearSearch) {
+        btnWsClearSearch.addEventListener('click', () => {
+            if (wsSearchInput) wsSearchInput.value = '';
+            if (searchInput) searchInput.value = '';
+            btnWsClearSearch.style.display = 'none';
+            if (clearBtn) clearBtn.style.display = 'none';
+            executeWorkshopSearch();
+        });
+    }
+
+    document.getElementById('wsTagSelect').addEventListener('change', () => {
+        updateActiveChipFromSelects();
+        executeWorkshopSearch();
+    });
+
+    document.getElementById('wsSortSelect').addEventListener('change', () => {
+        updateActiveChipFromSelects();
+        executeWorkshopSearch();
     });
 
     document.getElementById('btnWsModeBrowse').addEventListener('click', () => {
@@ -416,10 +493,17 @@ function setupEventHandlers() {
             const sort = chip.getAttribute('data-wssort');
             document.getElementById('wsTagSelect').value = tag;
             document.getElementById('wsSortSelect').value = sort;
-            document.getElementById('wsSearchInput').value = '';
+            // Preserves whatever search query was entered rather than resetting to empty string!
             executeWorkshopSearch();
         });
     });
+
+    const btnWsLoadMore = document.getElementById('btnWsLoadMore');
+    if (btnWsLoadMore) {
+        btnWsLoadMore.addEventListener('click', () => {
+            executeWorkshopSearch(true);
+        });
+    }
 
     // Workshop Hide Subscribed Toggle
     const chkHideWs = document.getElementById('chkHideSubscribedWs');
@@ -1158,11 +1242,63 @@ async function executePublishNavmesh() {
 }
 
 // ---------------- STEAM WORKSHOP BROWSER ----------------
-async function executeWorkshopSearch() {
+async function executeWorkshopSearch(isLoadMore = false) {
     const query = document.getElementById('wsSearchInput').value.trim();
     const tag = document.getElementById('wsTagSelect').value;
     const sort = document.getElementById('wsSortSelect').value;
     const grid = document.getElementById('workshopGrid');
+    const btnLoadMore = document.getElementById('btnWsLoadMore');
+
+    if (isLoadMore) {
+        if (state.wsLoadingMore || !state.wsHasMore) return;
+        state.wsLoadingMore = true;
+        if (btnLoadMore) {
+            btnLoadMore.disabled = true;
+            btnLoadMore.innerHTML = `
+                <span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-blue); border-top-color: transparent; border-radius: 50%; display: inline-block;"></span>
+                <span>Loading more items...</span>
+            `;
+        }
+
+        try {
+            const nextPage = (state.wsPage || 1) + 2;
+            const newItems = await window.api.searchWorkshop({ query, tag, sort, page: nextPage, pagesToFetch: 2 });
+            state.wsPage = nextPage;
+            state.wsLoadingMore = false;
+
+            if (!newItems || newItems.length === 0) {
+                state.wsHasMore = false;
+                if (btnLoadMore) {
+                    btnLoadMore.style.display = 'none';
+                    showToast('All available Workshop items loaded', 'info');
+                }
+                return;
+            }
+
+            const existingIds = new Set((state.wsItems || []).map(i => String(i.id)));
+            const uniqueNew = newItems.filter(i => !existingIds.has(String(i.id)));
+            if (uniqueNew.length === 0 || newItems.length < 10) {
+                state.wsHasMore = false;
+            }
+            state.wsItems = (state.wsItems || []).concat(uniqueNew);
+            renderWorkshopGrid(state.wsItems);
+            showToast(`Loaded ${uniqueNew.length} additional workshop items`, 'info');
+        } catch (err) {
+            state.wsLoadingMore = false;
+            if (btnLoadMore) {
+                btnLoadMore.disabled = false;
+                btnLoadMore.innerHTML = `<span>Retry Loading More</span>`;
+            }
+            showToast('Failed to load more items: ' + err.message, 'error');
+        }
+        return;
+    }
+
+    // Fresh search or category/sort change
+    state.wsPage = 1;
+    state.wsHasMore = true;
+    state.wsLoadingMore = false;
+    if (btnLoadMore) btnLoadMore.style.display = 'none';
 
     grid.innerHTML = `
         <div class="loading-state">
@@ -1181,8 +1317,9 @@ async function executeWorkshopSearch() {
             } catch (_) {}
         }
 
-        const items = await window.api.searchWorkshop({ query, tag, sort });
-        state.wsItems = items;
+        // Fetch 2 pages concurrently by default (60+ items)
+        const items = await window.api.searchWorkshop({ query, tag, sort, page: 1, pagesToFetch: 2 });
+        state.wsItems = items || [];
         state.wsLoaded = true;
 
         if (!items || items.length === 0) {
@@ -1193,7 +1330,12 @@ async function executeWorkshopSearch() {
                     <p>Try searching for a different keyword or category.</p>
                 </div>
             `;
+            if (btnLoadMore) btnLoadMore.style.display = 'none';
             return;
+        }
+
+        if (items.length < 15) {
+            state.wsHasMore = false;
         }
 
         renderWorkshopGrid(items);
@@ -1204,11 +1346,13 @@ async function executeWorkshopSearch() {
                 <p>${e.message}</p>
             </div>
         `;
+        if (btnLoadMore) btnLoadMore.style.display = 'none';
     }
 }
 
 function renderWorkshopGrid(items) {
     const grid = document.getElementById('workshopGrid');
+    const btnLoadMore = document.getElementById('btnWsLoadMore');
     grid.innerHTML = '';
 
     // Collect all installed workshop IDs from Steam UGC subscriptions, addons, and maps
@@ -1236,6 +1380,7 @@ function renderWorkshopGrid(items) {
     }
 
     if (displayItems.length === 0) {
+        if (btnLoadMore) btnLoadMore.style.display = 'none';
         grid.innerHTML = `
             <div class="empty-state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -1325,9 +1470,26 @@ function renderWorkshopGrid(items) {
 
         grid.appendChild(card);
     });
+
+    // Update Load More button
+    if (btnLoadMore) {
+        if (state.wsMode === 'browse' && state.wsHasMore) {
+            btnLoadMore.style.display = 'inline-flex';
+            btnLoadMore.disabled = false;
+            btnLoadMore.innerHTML = `
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
+                <span>Load More Discoveries</span>
+            `;
+        } else {
+            btnLoadMore.style.display = 'none';
+        }
+    }
 }
 
 function renderSubscribedWorkshopItems() {
+    const btnLoadMore = document.getElementById('btnWsLoadMore');
+    if (btnLoadMore) btnLoadMore.style.display = 'none';
+
     const grid = document.getElementById('workshopGrid');
     grid.innerHTML = '';
 

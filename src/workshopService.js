@@ -107,45 +107,68 @@ async function searchWorkshop(options = {}) {
         query = '',
         tag = '',
         sort = 'trend', // 'trend', 'mostrecent', 'totaluniquesubscribers'
-        page = 1
+        page = 1,
+        pagesToFetch = 2
     } = options;
 
-    let url = `https://steamcommunity.com/workshop/browse/?appid=4000&browsesort=${sort}&section=readytouseitems&p=${page}`;
-    if (query && query.trim()) {
-        url += `&searchtext=${encodeURIComponent(query.trim())}`;
+    const pageCount = Math.max(1, Math.min(Number(pagesToFetch) || 2, 4));
+    const pageNumbers = [];
+    for (let i = 0; i < pageCount; i++) {
+        pageNumbers.push(page + i);
     }
-    if (tag && tag.trim()) {
-        url += `&requiredtags[0]=${encodeURIComponent(tag.trim())}`;
-    }
+
+    const fetchSinglePageIds = async (p) => {
+        let url = `https://steamcommunity.com/workshop/browse/?appid=4000&browsesort=${sort}&section=readytouseitems&p=${p}`;
+        if (query && query.trim()) {
+            url += `&searchtext=${encodeURIComponent(query.trim())}`;
+        }
+        if (tag && tag.trim()) {
+            url += `&requiredtags[0]=${encodeURIComponent(tag.trim())}`;
+        }
+
+        try {
+            const res = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+            });
+
+            if (!res.ok) return [];
+
+            const html = await res.text();
+            const re = /sharedfiles\/filedetails\/\?id=(\d+)/g;
+            const ids = [];
+            let m;
+            while ((m = re.exec(html)) !== null) {
+                if (!ids.includes(m[1])) {
+                    ids.push(m[1]);
+                }
+            }
+            return ids;
+        } catch (err) {
+            console.error(`Error searching workshop page ${p}:`, err);
+            return [];
+        }
+    };
 
     try {
-        const res = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-        });
-
-        if (!res.ok) {
-            throw new Error(`Steam returned status ${res.status}`);
-        }
-
-        const html = await res.text();
-        const re = /sharedfiles\/filedetails\/\?id=(\d+)/g;
-        const ids = [];
-        let m;
-        while ((m = re.exec(html)) !== null) {
-            if (!ids.includes(m[1])) {
-                ids.push(m[1]);
+        const pageResults = await Promise.all(pageNumbers.map(p => fetchSinglePageIds(p)));
+        const allIds = [];
+        for (const ids of pageResults) {
+            for (const id of ids) {
+                if (!allIds.includes(id)) {
+                    allIds.push(id);
+                }
             }
         }
 
-        if (ids.length === 0) {
+        if (allIds.length === 0) {
             return [];
         }
 
         // Fetch details for found items
-        const detailsMap = await fetchPublishedFileDetails(ids);
-        return ids.map(id => detailsMap[id]).filter(Boolean);
+        const detailsMap = await fetchPublishedFileDetails(allIds);
+        return allIds.map(id => detailsMap[id]).filter(Boolean);
     } catch (err) {
         console.error('Error searching workshop:', err);
         return [];

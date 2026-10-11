@@ -196,7 +196,10 @@
 
                 <div class="workshop-controls-row" id="wsBrowseControls">
                     <div class="workshop-search-bar">
-                        <input type="text" id="wsSearchInput" placeholder="Search maps, weapons, nextbots, playermodels...">
+                        <div style="position: relative; flex: 1; min-width: 250px; display: flex; align-items: center;">
+                            <input type="text" id="wsSearchInput" placeholder="Search maps, weapons, nextbots, playermodels..." style="width: 100%; padding-right: 30px;">
+                            <button id="btnWsClearSearch" style="position: absolute; right: 10px; background: transparent; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; display: none; line-height: 1;" title="Clear search text">&times;</button>
+                        </div>
                         <select id="wsTagSelect" class="select-styled">
                             <option value="Map">Maps</option>
                             <option value="NPC">NPCs & Nextbots</option>
@@ -237,6 +240,13 @@
                         <div class="spinner"></div>
                         <p>Loading trending Workshop maps from Steam...</p>
                     </div>
+                </div>
+
+                <div id="wsPaginationContainer" style="display: flex; justify-content: center; align-items: center; margin-top: 24px; padding-bottom: 24px;">
+                    <button class="btn btn-secondary" id="btnWsLoadMore" style="display: none; padding: 10px 28px; font-weight: 600; gap: 8px;">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
+                        <span>Load More Discoveries</span>
+                    </button>
                 </div>
             </section>
 
