@@ -341,8 +341,8 @@ async function launchMap(gmodInfo, mapName, options = {}) {
     }
     if (gamemode) args.push('+gamemode', gamemode);
     args.push('+map', mapName);
-    // Guarantee wireless controller is initialized on boot without Steam Controller conflict
-    args.push('+sc_enable', '0', '+joystick', '1', '+joy_advanced', '1', '+exec', '360controller', '+jlook');
+    // Guarantee wireless controller is initialized on boot with modern layout
+    args.push('+joystick', '1', '+joy_advanced', '1', '+exec', '360controller');
 
     if (extraArgs && extraArgs.trim()) {
         args.push(...extraArgs.trim().split(/\s+/));

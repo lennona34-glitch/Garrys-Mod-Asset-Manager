@@ -390,115 +390,137 @@ function applyControllerTuning(gmodInfo, preset = 'smooth') {
     const cfgDir = path.join(gmodInfo.garrysmodDir, 'cfg');
     if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
 
-    let yawSens = '-0.40';
-    let pitchSens = '0.32';
-    let accelScale = '0.35';
-    let accelMax = '0.80';
-    let mouseSens = '1.65';
+    let yawSens = '-0.90';
+    let pitchSens = '0.65';
+    let accelScale = '0.60';
+    let accelMax = '1.20';
+    let mouseSens = '2.00';
 
     if (preset === 'cinematic') {
-        yawSens = '-0.25';
-        pitchSens = '0.20';
-        accelScale = '0.20';
-        accelMax = '0.60';
-        mouseSens = '1.20';
-    } else if (preset === 'arcade') {
-        yawSens = '-0.60';
+        yawSens = '-0.65';
         pitchSens = '0.50';
-        accelScale = '0.50';
-        accelMax = '1.10';
-        mouseSens = '2.40';
+        accelScale = '0.45';
+        accelMax = '0.90';
+        mouseSens = '1.50';
+    } else if (preset === 'arcade') {
+        yawSens = '-1.25';
+        pitchSens = '0.85';
+        accelScale = '0.80';
+        accelMax = '1.50';
+        mouseSens = '2.80';
     }
 
     const autoexecPath = path.join(cfgDir, 'autoexec.cfg');
     const configPath = path.join(cfgDir, 'config.cfg');
     const controller360Path = path.join(cfgDir, '360controller.cfg');
+    const joystickPath = path.join(cfgDir, 'joystick.cfg');
 
     const controllerBlock = `// --- Modern Tactical Wireless Controller / Gamepad Tuning ---
 sc_enable "0"
 joystick "1"
 joy_advanced "1"
 joy_name "Xbox360 controller"
-exec 360controller
 
-// Axis Mapping (Guarantees sticks work across all maps & sessions)
+// Axis Mapping (Standard XInput / DirectInput mapping)
 joy_advaxisx "3"
 joy_advaxisy "1"
 joy_advaxisz "0"
 joy_advaxisr "2"
 joy_advaxisu "4"
 joy_advaxisv "0"
-joyadvancedupdate
-+jlook
-
-// Look Sensitivity (Yaw / Pitch) - 6/10 Calibrated Smooth Look Speed
-joy_yawsensitivity "${yawSens}"
-joy_pitchsensitivity "${pitchSens}"
-joy_yawthreshold "0.15"
-joy_pitchthreshold "0.15"
-
-// Look Acceleration Curve - Tamed 0.35x curve (Eliminates sudden spin spikes)
-joy_accelscale "${accelScale}"
-joy_accelmax "${accelMax}"
-joy_response_look "1"
-joy_lowend "0.65"
-joy_lowmap "0.15"
-joy_autoaimdampen "0.5"
-joy_autoaimdampenrange "0.85"
+joy_movement_stick "0"
+joy_movement_stick_default "0"
+joy_inverty "0"
 
 // Movement Sensitivity (Forward / Strafe)
-joy_forwardsensitivity "-0.85"
-joy_sidesensitivity "0.85"
+joy_forwardsensitivity "-1.0"
+joy_sidesensitivity "1.0"
 joy_forwardthreshold "0.15"
 joy_sidethreshold "0.15"
 joy_response_move "1"
 
-// Mouse Sensitivity Fallback (Steam Input Emulation)
+// Look Sensitivity & Acceleration (Calibrated 6/10 Smooth Tactical Aiming)
+joy_pitchsensitivity "${pitchSens}"
+joy_yawsensitivity "${yawSens}"
+joy_pitchthreshold "0.15"
+joy_yawthreshold "0.15"
+joy_accelscale "${accelScale}"
+joy_accelmax "${accelMax}"
+joy_response_look "1"
+joy_lowend "0.50"
+joy_lowmap "0.50"
+joy_autoaimdampen "0.5"
+joy_autoaimdampenrange "0.85"
 sensitivity "${mouseSens}"
 m_customaccel "0"
 
-// --- Modernized Button Layout ---
-// R3 Toggle Sprint (Click to run continuously without holding)
+joyadvancedupdate
+
+// Toggle sprint alias (Click R3 once to run continuously without holding)
 alias sprint_toggle "sprint_on"
 alias sprint_on "+speed; alias sprint_toggle sprint_off"
 alias sprint_off "-speed; alias sprint_toggle sprint_on"
 
-// B Button = Crouch (No more accidental chat!)
-bind "JOY2" "+duck"
-bind "b" "+duck"
+// Primary & Secondary Attack (Triggers)
+bind "R_TRIGGER" "+attack"
+bind "L_TRIGGER" "+attack2"
+bind "Z AXIS NEG" "+attack"
+bind "Z AXIS POS" "+attack2"
 
-// R1 (Right Bumper) = Crouch
-bind "JOY6" "+duck"
+// Face Buttons & Bumpers
+bind "A_BUTTON" "+jump"
+bind "B_BUTTON" "+duck"
+bind "X_BUTTON" "+use"
+bind "Y_BUTTON" "+reload"
+bind "L_SHOULDER" "invprev"
+bind "R_SHOULDER" "+duck"
 
-// R3 (Right Stick Click) = Constant Running Toggle
-bind "JOY10" "sprint_toggle"
+// Stick Clicks (L3 = Chat, R3 = Toggle Constant Run)
+bind "STICK1" "messagemode"
+bind "STICK2" "sprint_toggle"
 
-// L3 (Left Stick Click) = Console Chat Box
-bind "JOY9" "messagemode"
+// Menu & Scoreboard
+bind "START" "pause"
+bind "BACK" "+showscores"
 
-// A = Jump, X = Use, Y = Reload, L1 = Prev Weapon
+// D-Pad Quick Actions
+bind "POV_UP" "undo"
+bind "POV_DOWN" "noclip"
+bind "POV_RIGHT" "+voicerecord"
+bind "POV_LEFT" "+menu"
+
+// Legacy DirectInput Fallbacks (JOY1 - JOY10)
 bind "JOY1" "+jump"
+bind "JOY2" "+duck"
 bind "JOY3" "+use"
 bind "JOY4" "+reload"
 bind "JOY5" "invprev"
-bind "POV_UP" "undo"
-bind "POV_RIGHT" "+voicerecord"
-bind "POV_DOWN" "noclip"
-bind "POV_LEFT" "+menu"`;
+bind "JOY6" "+duck"
+bind "JOY7" "+showscores"
+bind "JOY8" "pause"
+bind "JOY9" "messagemode"
+bind "JOY10" "sprint_toggle"
+
+// Keyboard fallbacks
+bind "b" "+duck"`;
 
     // 1. Update autoexec.cfg
     let autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
     if (autoexecContent.includes('// --- Modern Tactical Wireless Controller') || autoexecContent.includes('// --- Smooth Wireless Controller')) {
-        autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?bind "POV_LEFT" "\+menu"/, controllerBlock.trim());
-        if (!autoexecContent.includes('bind "POV_LEFT" "+menu"')) {
-            autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?m_customaccel "0"/, controllerBlock.trim());
+        autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?bind "b" "\+duck"/, controllerBlock.trim());
+        if (!autoexecContent.includes('bind "b" "+duck"')) {
+            autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?bind "POV_LEFT" "\+menu"/, controllerBlock.trim());
         }
     } else {
         autoexecContent += `\n\n${controllerBlock}\n`;
     }
     fs.writeFileSync(autoexecPath, autoexecContent, 'utf8');
 
-    // 2. Update config.cfg if present
+    // 2. Update 360controller.cfg & joystick.cfg
+    fs.writeFileSync(controller360Path, controllerBlock, 'utf8');
+    fs.writeFileSync(joystickPath, controllerBlock, 'utf8');
+
+    // 3. Update config.cfg if present
     if (fs.existsSync(configPath)) {
         try {
             let configContent = fs.readFileSync(configPath, 'utf8');
@@ -509,22 +531,6 @@ bind "POV_LEFT" "+menu"`;
             configContent = configContent.replace(/sensitivity "[^"]*"/, `sensitivity "${mouseSens}"`);
             configContent = configContent.replace(/bind "b" "[^"]*"/, `bind "b" "+duck"`);
             fs.writeFileSync(configPath, configContent, 'utf8');
-        } catch (_) {}
-    }
-
-    // 3. Update 360controller.cfg if present
-    if (fs.existsSync(controller360Path)) {
-        try {
-            let c360 = fs.readFileSync(controller360Path, 'utf8');
-            c360 = c360.replace(/joy_pitchsensitivity [0-9.-]+/, `joy_pitchsensitivity ${pitchSens}`);
-            c360 = c360.replace(/joy_yawsensitivity [0-9.-]+/, `joy_yawsensitivity ${yawSens}`);
-            c360 = c360.replace(/joy_accelscale [0-9.-]+/, `joy_accelscale ${accelScale}`);
-            c360 = c360.replace(/joy_accelmax [0-9.-]+/, `joy_accelmax ${accelMax}`);
-            c360 = c360.replace(/bind "JOY2" "[^"]*"/, `bind "JOY2" "+duck"`);
-            c360 = c360.replace(/bind "JOY6" "[^"]*"/, `bind "JOY6" "+duck"`);
-            c360 = c360.replace(/bind "JOY9" "[^"]*"/, `bind "JOY9" "messagemode"`);
-            c360 = c360.replace(/bind "JOY10" "[^"]*"/, `bind "JOY10" "sprint_toggle"`);
-            fs.writeFileSync(controller360Path, c360, 'utf8');
         } catch (_) {}
     }
 
