@@ -392,22 +392,22 @@ function applyControllerTuning(gmodInfo, preset = 'smooth') {
 
     let yawSens = '-0.90';
     let pitchSens = '0.65';
-    let accelScale = '0.60';
-    let accelMax = '1.20';
-    let mouseSens = '2.00';
+    let accelScale = '0.45';
+    let accelMax = '1.10';
+    let mouseSens = '1.85';
 
     if (preset === 'cinematic') {
         yawSens = '-0.65';
         pitchSens = '0.50';
-        accelScale = '0.45';
-        accelMax = '0.90';
+        accelScale = '0.35';
+        accelMax = '0.85';
         mouseSens = '1.50';
     } else if (preset === 'arcade') {
         yawSens = '-1.25';
         pitchSens = '0.85';
-        accelScale = '0.80';
-        accelMax = '1.50';
-        mouseSens = '2.80';
+        accelScale = '0.65';
+        accelMax = '1.35';
+        mouseSens = '2.40';
     }
 
     const autoexecPath = path.join(cfgDir, 'autoexec.cfg');
@@ -439,20 +439,22 @@ joy_forwardthreshold "0.15"
 joy_sidethreshold "0.15"
 joy_response_move "1"
 
-// Look Sensitivity & Acceleration (Calibrated 6/10 Smooth Tactical Aiming)
+// Look Sensitivity & Acceleration (Calibrated 6/10 Buttery Smooth Aiming)
 joy_pitchsensitivity "${pitchSens}"
 joy_yawsensitivity "${yawSens}"
-joy_pitchthreshold "0.15"
-joy_yawthreshold "0.15"
+joy_pitchthreshold "0.08"
+joy_yawthreshold "0.08"
 joy_accelscale "${accelScale}"
 joy_accelmax "${accelMax}"
 joy_response_look "1"
-joy_lowend "0.50"
-joy_lowmap "0.50"
+joy_lowend "0.65"
+joy_lowmap "0.65"
 joy_autoaimdampen "0.5"
 joy_autoaimdampenrange "0.85"
 sensitivity "${mouseSens}"
 m_customaccel "0"
+m_rawinput "1"
+m_filter "1"
 
 joyadvancedupdate
 
@@ -574,16 +576,54 @@ end)
 
     // 6. Update Steam Input Workshop Profile 923095811 and configset bindings
     try {
-        let steamMouseSens = '60';
+        let steamMouseSens = '58';
         if (preset === 'cinematic') steamMouseSens = '45';
-        else if (preset === 'arcade') steamMouseSens = '85';
+        else if (preset === 'arcade') steamMouseSens = '75';
 
         const legacyBinPath = 'C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\241100\\923095811\\838078270046996915_legacy.bin';
         if (fs.existsSync(legacyBinPath)) {
             let binContent = fs.readFileSync(legacyBinPath, 'utf8');
-            binContent = binContent.replace(/\"sensitivity\"\s+\"\d+\"/g, `"sensitivity"\t\t"${steamMouseSens}"`);
             binContent = binContent.replace(/\"button_B\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/g, '"button_B"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
             binContent = binContent.replace(/\"right_bumper\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/g, '"right_bumper"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
+
+            // Apply buttery smooth low-pass mouse smoothing, anti-deadzone, and progressive curve
+            const group7Block = `"group"
+	{
+		"id"		"7"
+		"mode"		"joystick_mouse"
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press LEFT_SHIFT, Toggle Constant Run"
+						}
+						"settings"
+						{
+							"toggle"		"1"
+							"haptic_intensity"		"1"
+						}
+					}
+				}
+			}
+		}
+		"settings"
+		{
+			"output_joystick"		"2"
+			"sensitivity"		"${steamMouseSens}"
+			"sensitivity_vert_scale"		"85"
+			"mouse_smoothing"		"28"
+			"deadzone"		"2000"
+			"anti_deadzone"		"2000"
+			"custom_curve_exponent"		"130"
+		}
+	}`;
+            binContent = binContent.replace(/"group"\s*\{\s*"id"\s*"7"[\s\S]*?\n\t\}/, group7Block);
             fs.writeFileSync(legacyBinPath, binContent, 'utf8');
         }
 
