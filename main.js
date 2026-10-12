@@ -9,7 +9,7 @@ const { scanAllAddons, toggleAddonState, inspectGma, unpackAddon, packAddonFolde
 const { analyzeStorage, cleanTarget } = require('./src/storageCleaner');
 const { fetchPublishedFileDetails, searchWorkshop, openInSteamClient, openInBrowser, openSteamWorkshopHub, openSteamUrl } = require('./src/workshopService');
 const { loadPresets, createPreset, deletePreset, applyPreset } = require('./src/presetsManager');
-const { runDiagnostics, fixAddonConflict, undoAddonConflict } = require('./src/diagnosticsManager');
+const { runDiagnostics, fixAddonConflict, undoAddonConflict, getDismissedNavState, dismissNavMap, dismissAllNavMaps, restoreNavMaps } = require('./src/diagnosticsManager');
 const { getDefaultTitle, getDefaultDescription, publishNavmeshToWorkshop } = require('./src/workshopPublisher');
 
 let mainWindow = null;
@@ -219,6 +219,22 @@ ipcMain.handle('run-diagnostics', async () => {
 ipcMain.handle('fix-addon-conflict', async (event, conflictKey) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     return fixAddonConflict(currentGmodInfo, conflictKey);
+});
+
+ipcMain.handle('get-dismissed-nav-state', async () => {
+    return getDismissedNavState();
+});
+
+ipcMain.handle('dismiss-nav-map', async (event, mapName) => {
+    return dismissNavMap(mapName);
+});
+
+ipcMain.handle('dismiss-all-nav-maps', async (event, allMapNames) => {
+    return dismissAllNavMaps(allMapNames);
+});
+
+ipcMain.handle('restore-nav-maps', async () => {
+    return restoreNavMaps();
 });
 
 ipcMain.handle('get-subscribed-workshop-ids', async () => {

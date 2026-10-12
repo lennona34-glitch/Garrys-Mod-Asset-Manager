@@ -299,9 +299,14 @@ function setupEventHandlers() {
             try {
                 await Promise.all([refreshMaps(), refreshDiagnostics()]);
                 const totalMaps = (state.maps || []).length;
-                const unmeshed = (diagnosticResults && diagnosticResults.counts) ? diagnosticResults.counts.noNav : 0;
+                const unmeshed = (diagnosticResults && diagnosticResults.counts) ? (diagnosticResults.counts.noNav || 0) : 0;
+                const exempt = (diagnosticResults && diagnosticResults.counts) ? (diagnosticResults.counts.dismissedNav || 0) : 0;
                 const meshed = Math.max(0, totalMaps - unmeshed);
-                showToast(`Scan complete: ${meshed} of ${totalMaps} maps meshed (${unmeshed} remaining)`, 'success');
+                if (unmeshed === 0) {
+                    showToast(`Scan complete: All systems 100% Healthy! (${exempt} rogue maps exempt)`, 'success');
+                } else {
+                    showToast(`Scan complete: ${meshed} of ${totalMaps} maps meshed (${unmeshed} remaining, ${exempt} exempt)`, 'success');
+                }
             } catch (err) {
                 showToast(`Scan error: ${err.message}`, 'error');
             } finally {
@@ -1690,31 +1695,12 @@ function renderDiagnostics() {
         badge.style.display = 'none';
     }
 
-    // Dismissed / Silenced Navmesh state
-    const silencedAllNav = localStorage.getItem('gmod_silence_all_nav_notices') === 'true';
-    let dismissedNavMaps = [];
-    try {
-        dismissedNavMaps = JSON.parse(localStorage.getItem('gmod_dismissed_nav_maps') || '[]');
-    } catch (_) {}
+    // Dismissed / Silenced Navmesh state from backend
+    const exemptNavCount = (res.counts && res.counts.dismissedNav) || 0;
+    const activeNavCount = (res.counts && res.counts.noNav) || 0;
 
     // Filter out dismissed maps from nav recommendations
-    const activeNavRecs = [];
-    (res.recommendations || []).forEach(r => {
-        if (r.type === 'navmesh_notice') {
-            if (silencedAllNav) return;
-            const remainingMaps = (r.affectedMaps || []).filter(m => !dismissedNavMaps.includes(m));
-            if (remainingMaps.length > 0) {
-                activeNavRecs.push({
-                    ...r,
-                    affectedMaps: remainingMaps
-                });
-            }
-        } else {
-            activeNavRecs.push(r);
-        }
-    });
-
-    const activeMapCount = activeNavRecs.reduce((acc, r) => acc + (r.affectedMaps ? r.affectedMaps.length : 0), 0);
+    const activeNavRecs = (res.recommendations || []).filter(r => r.type === 'navmesh_notice');
 
     // Update summary stat boxes
     const elMounted = document.getElementById('docStatMounted');
@@ -1727,13 +1713,13 @@ function renderDiagnostics() {
     if (elBases) elBases.textContent = res.counts.missingBases;
     if (elConflicts) elConflicts.textContent = res.counts.conflicts;
     if (elNav) {
-        if (silencedAllNav) {
-            elNav.textContent = '0 (Silenced)';
-            elNav.title = 'NavMesh recommendations silenced (Non-Nextbot maps dismissed)';
-        } else if (dismissedNavMaps.length > 0) {
-            elNav.textContent = `${activeMapCount} (${dismissedNavMaps.length} Ignored)`;
+        if (activeNavCount === 0 && exemptNavCount > 0) {
+            elNav.textContent = `0 (${exemptNavCount} Exempt)`;
+            elNav.title = `${exemptNavCount} rogue/non-Nextbot maps permanently exempted from NavMesh checks`;
+        } else if (exemptNavCount > 0) {
+            elNav.textContent = `${activeNavCount} (${exemptNavCount} Exempt)`;
         } else {
-            elNav.textContent = res.counts.noNav;
+            elNav.textContent = activeNavCount;
         }
     }
     if (elFixed) elFixed.textContent = res.counts.resolvedCount || 0;
@@ -1752,9 +1738,9 @@ function renderDiagnostics() {
             <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             <h3>All Systems Healthy! (100% Clean)</h3>
             <p>No missing base frameworks, content mounts, or script conflicts were detected. Everything is optimal!</p>
-            ${(silencedAllNav || dismissedNavMaps.length > 0) ? `
+            ${exemptNavCount > 0 ? `
                 <div style="margin-top: 14px; font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <span>🙈 ${silencedAllNav ? '10 map NavMesh recommendations silenced (Ignored).' : `${dismissedNavMaps.length} map NavMesh recommendations ignored.`}</span>
+                    <span>🛡️ <strong>${exemptNavCount} rogue NavMesh notices</strong> permanently exempted & serving as a lesson.</span>
                     <button class="btn btn-secondary btn-xs" id="btnRestoreNavNotices" style="padding: 2px 8px;">Unhide</button>
                 </div>
             ` : ''}
@@ -1763,11 +1749,18 @@ function renderDiagnostics() {
 
         const btnRestore = cleanCard.querySelector('#btnRestoreNavNotices');
         if (btnRestore) {
-            btnRestore.addEventListener('click', () => {
-                localStorage.removeItem('gmod_silence_all_nav_notices');
-                localStorage.removeItem('gmod_dismissed_nav_maps');
-                showToast('NavMesh recommendations restored.', 'info');
-                renderDiagnostics();
+            btnRestore.addEventListener('click', async () => {
+                btnRestore.disabled = true;
+                btnRestore.textContent = 'Restoring...';
+                try {
+                    await window.api.restoreNavMaps();
+                    localStorage.removeItem('gmod_silence_all_nav_notices');
+                    localStorage.removeItem('gmod_dismissed_nav_maps');
+                    showToast('NavMesh recommendations restored.', 'info');
+                    await refreshDiagnostics();
+                } catch (e) {
+                    showToast('Error restoring notices: ' + e.message, 'error');
+                }
             });
         }
     }
@@ -2068,10 +2061,19 @@ function renderDiagnostics() {
 
         const btnDismissAll = group.querySelector('.btn-dismiss-all-nav');
         if (btnDismissAll) {
-            btnDismissAll.addEventListener('click', () => {
-                localStorage.setItem('gmod_silence_all_nav_notices', 'true');
-                showToast('All NavMesh recommendations dismissed! System is 100% Healthy.', 'success');
-                renderDiagnostics();
+            btnDismissAll.addEventListener('click', async () => {
+                btnDismissAll.disabled = true;
+                btnDismissAll.textContent = 'Dismissing...';
+                try {
+                    const allMaps = activeNavRecs.flatMap(r => r.affectedMaps || []);
+                    await window.api.dismissAllNavMaps(allMaps);
+                    localStorage.setItem('gmod_silence_all_nav_notices', 'true');
+                    showToast('All NavMesh recommendations permanently dismissed! System is 100% Healthy.', 'success');
+                    await refreshDiagnostics();
+                } catch (e) {
+                    showToast('Error dismissing: ' + e.message, 'error');
+                    btnDismissAll.disabled = false;
+                }
             });
         }
 
@@ -2109,14 +2111,14 @@ function renderDiagnostics() {
                 <div class="doctor-card-desc">
                     ${rec.message}
                     <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 4px; border-left: 3px solid var(--accent-blue);">
-                        💡 <strong>A map that doesn't seem to go away?</strong> Some maps (like Silent Escape story campaign, Slender Spongebob, and Lestnicha staircase) have custom scripted AI or lack player spawn entities, preventing GMod from auto-generating a mesh. Click the <strong>✕</strong> button next to any map to dismiss it, or click <strong>⚡ Dismiss All</strong> above to instantly clear your dashboard to 100% Healthy!
+                        💡 <strong>A map that doesn't seem to go away?</strong> Some maps (like Silent Escape story campaign, Slender Spongebob, and Lestnicha staircase) have custom scripted AI or lack player spawn entities, preventing GMod from auto-generating a mesh. Click the <strong>✕</strong> button next to any map to dismiss it, or click <strong>⚡ Dismiss All</strong> above to permanently clear your dashboard to 100% Healthy!
                     </div>
                 </div>
                 ${mapsChipsHtml}
                 <div class="doctor-conflict-item" style="margin-top: 14px; border-left: 3px solid var(--accent-cyan);">
                     <div class="doctor-conflict-fix" style="color: var(--accent-cyan); font-weight: 600;">⚡ Automated Autopilot Generation:</div>
                     <div class="doctor-conflict-desc" style="margin-top: 6px; line-height: 1.6;">
-                        If you ever do want a NavMesh for a specific map, click <strong>⚡ Auto-Fix</strong> next to it. GMod will load and calculate it automatically. Otherwise, click <strong>⚡ Dismiss All</strong> to silence the warning.
+                        If you ever do want a NavMesh for a specific map, click <strong>⚡ Auto-Fix</strong> next to it. GMod will load and calculate it automatically. Otherwise, click <strong>⚡ Dismiss All</strong> to silence the warning permanently.
                     </div>
                 </div>
             `;
@@ -2140,19 +2142,18 @@ function renderDiagnostics() {
 
             // Bind dismiss single map buttons
             card.querySelectorAll('.btn-dismiss-map-nav').forEach(btn => {
-                btn.addEventListener('click', (e) => {
+                btn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     const mapName = btn.getAttribute('data-map');
-                    let currentDismissed = [];
+                    btn.disabled = true;
                     try {
-                        currentDismissed = JSON.parse(localStorage.getItem('gmod_dismissed_nav_maps') || '[]');
-                    } catch (_) {}
-                    if (!currentDismissed.includes(mapName)) {
-                        currentDismissed.push(mapName);
-                        localStorage.setItem('gmod_dismissed_nav_maps', JSON.stringify(currentDismissed));
+                        await window.api.dismissNavMap(mapName);
+                        showToast(`Permanently dismissed NavMesh notice for ${mapName}`, 'info');
+                        await refreshDiagnostics();
+                    } catch (err) {
+                        showToast(`Error dismissing: ${err.message}`, 'error');
+                        btn.disabled = false;
                     }
-                    showToast(`Dismissed NavMesh notice for ${mapName}`, 'info');
-                    renderDiagnostics();
                 });
             });
 

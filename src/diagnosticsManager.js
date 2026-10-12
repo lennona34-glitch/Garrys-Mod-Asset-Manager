@@ -27,6 +27,84 @@ function writeAddonNoMount(gmodInfo, ids) {
     fs.writeFileSync(cfgPath, out, 'utf8');
 }
 
+const DISMISSED_NAV_FILE = path.join(__dirname, '..', 'data', 'dismissed_nav_maps.json');
+
+const DEFAULT_ROGUE_MAPS = [
+    'slender_spongebob_v1b',
+    'gm_bikinibottom_map',
+    'gm_bikinibottom_night',
+    'gm_bikinibottom_winter',
+    'lestnicha3',
+    'gm_ssne_arena',
+    'foggy_road'
+];
+
+function loadDismissedNavState() {
+    try {
+        if (fs.existsSync(DISMISSED_NAV_FILE)) {
+            const data = JSON.parse(fs.readFileSync(DISMISSED_NAV_FILE, 'utf8'));
+            return {
+                silenceAll: data.silenceAll !== false,
+                dismissedMaps: Array.isArray(data.dismissedMaps) ? data.dismissedMaps : DEFAULT_ROGUE_MAPS,
+                rogueMaps: Array.isArray(data.rogueMaps) ? data.rogueMaps : DEFAULT_ROGUE_MAPS
+            };
+        }
+    } catch (_) {}
+
+    const defaultState = {
+        silenceAll: true,
+        dismissedMaps: [...DEFAULT_ROGUE_MAPS],
+        rogueMaps: [...DEFAULT_ROGUE_MAPS]
+    };
+    saveDismissedNavState(defaultState);
+    return defaultState;
+}
+
+function saveDismissedNavState(state) {
+    try {
+        const dir = path.dirname(DISMISSED_NAV_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(DISMISSED_NAV_FILE, JSON.stringify(state, null, 2), 'utf8');
+    } catch (e) {
+        console.error('Failed to save dismissed nav state:', e);
+    }
+}
+
+function getDismissedNavState() {
+    return loadDismissedNavState();
+}
+
+function dismissNavMap(mapName) {
+    if (!mapName) return loadDismissedNavState();
+    const state = loadDismissedNavState();
+    if (!state.dismissedMaps.includes(mapName)) {
+        state.dismissedMaps.push(mapName);
+    }
+    saveDismissedNavState(state);
+    return state;
+}
+
+function dismissAllNavMaps(allMapNames = null) {
+    const state = loadDismissedNavState();
+    state.silenceAll = true;
+    if (Array.isArray(allMapNames) && allMapNames.length > 0) {
+        const set = new Set([...state.dismissedMaps, ...allMapNames]);
+        state.dismissedMaps = Array.from(set);
+    }
+    saveDismissedNavState(state);
+    return state;
+}
+
+function restoreNavMaps() {
+    const state = {
+        silenceAll: false,
+        dismissedMaps: [],
+        rogueMaps: [...DEFAULT_ROGUE_MAPS]
+    };
+    saveDismissedNavState(state);
+    return state;
+}
+
 // Known base addons required by popular GMod community content
 const KNOWN_BASES = {
     'simfphys': {
@@ -364,13 +442,32 @@ async function runDiagnostics(gmodInfo) {
         h.name.toLowerCase().includes('alphabet')
     );
 
-    if (hasNextbots && mapsWithoutNav.length > 0) {
+    const navState = loadDismissedNavState();
+    const dismissedSet = new Set((navState.dismissedMaps || []).map(m => m.toLowerCase()));
+
+    const activeMapsWithoutNav = navState.silenceAll
+        ? []
+        : mapsWithoutNav.filter(m => !dismissedSet.has(m.mapName.toLowerCase()));
+
+    const exemptMaps = mapsWithoutNav.filter(m => navState.silenceAll || dismissedSet.has(m.mapName.toLowerCase()));
+
+    if (hasNextbots && activeMapsWithoutNav.length > 0) {
         recommendations.push({
             type: 'navmesh_notice',
             title: 'Nextbots Cannot Pathfind Without Map NavMeshes',
-            message: `You have dozens of Nextbots installed (Sprunki, Spongebob, Bendy, Alphabet Lore), but ${mapsWithoutNav.length} of your maps lack a Navigation Mesh (.nav file).`,
-            affectedMaps: mapsWithoutNav.map(m => m.mapName),
+            message: `You have dozens of Nextbots installed (Sprunki, Spongebob, Bendy, Alphabet Lore), but ${activeMapsWithoutNav.length} of your maps lack a Navigation Mesh (.nav file).`,
+            affectedMaps: activeMapsWithoutNav.map(m => m.mapName),
             tip: 'Nextbots freeze in place or flood console with pathfinding errors on maps without a .nav file. To fix a map, load it in singleplayer, open the console (~), and type: nav_generate (GMod will calculate the mesh and restart the map automatically). Or search Steam Workshop for "<map_name> navmesh"!'
+        });
+    }
+
+    if (exemptMaps.length > 0) {
+        const exemptNames = exemptMaps.map(m => m.mapName);
+        resolved.push({
+            key: 'exempt_nav_maps',
+            title: `Rogue NavMesh Notices: Dismissed & Exempt (${exemptMaps.length} Maps)`,
+            detail: `${exemptNames.slice(0, 4).join(', ')}${exemptNames.length > 4 ? ` and ${exemptNames.length - 4} more` : ''} are permanently exempted from Nextbot pathfinding checks. Serving as a lesson to future unmeshable files!`,
+            isHealthy: true
         });
     }
 
@@ -478,7 +575,8 @@ async function runDiagnostics(gmodInfo) {
             missingContent: hasCss ? 0 : 1,
             missingBases: missingBasesCount,
             conflicts: duplicatePacks.length,
-            noNav: mapsWithoutNav.length,
+            noNav: activeMapsWithoutNav.length,
+            dismissedNav: exemptMaps.length,
             resolvedCount: resolved.length
         },
         mapsWithoutNav
@@ -559,5 +657,9 @@ function undoAddonConflict(gmodInfo, conflictKey) {
 module.exports = {
     runDiagnostics,
     fixAddonConflict,
-    undoAddonConflict
+    undoAddonConflict,
+    getDismissedNavState,
+    dismissNavMap,
+    dismissAllNavMaps,
+    restoreNavMaps
 };

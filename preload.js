@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('api', {
     
     // Diagnostics / Doctor
     runDiagnostics: () => ipcRenderer.invoke('run-diagnostics'),
+    getDismissedNavState: () => ipcRenderer.invoke('get-dismissed-nav-state'),
+    dismissNavMap: (mapName) => ipcRenderer.invoke('dismiss-nav-map', mapName),
+    dismissAllNavMaps: (allMapNames) => ipcRenderer.invoke('dismiss-all-nav-maps', allMapNames),
+    restoreNavMaps: () => ipcRenderer.invoke('restore-nav-maps'),
     fixAddonConflict: (conflictKey) => ipcRenderer.invoke('fix-addon-conflict', conflictKey),
     undoAddonConflict: (conflictKey) => ipcRenderer.invoke('undo-addon-conflict', conflictKey),
     generateMapNavmesh: (mapName) => ipcRenderer.invoke('generate-map-navmesh', mapName),

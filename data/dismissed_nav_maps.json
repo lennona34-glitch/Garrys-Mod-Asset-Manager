@@ -1,0 +1,21 @@
+{
+  "silenceAll": true,
+  "dismissedMaps": [
+    "slender_spongebob_v1b",
+    "gm_bikinibottom_map",
+    "gm_bikinibottom_night",
+    "gm_bikinibottom_winter",
+    "lestnicha3",
+    "gm_ssne_arena",
+    "foggy_road"
+  ],
+  "rogueMaps": [
+    "slender_spongebob_v1b",
+    "gm_bikinibottom_map",
+    "gm_bikinibottom_night",
+    "gm_bikinibottom_winter",
+    "lestnicha3",
+    "gm_ssne_arena",
+    "foggy_road"
+  ]
+}
