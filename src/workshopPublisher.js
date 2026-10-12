@@ -185,9 +185,19 @@ async function publishNavmeshToWorkshop(gmodInfo, { mapName, title, description,
             throw new Error('Failed to generate GMA package with gmad.exe.');
         }
 
-        // 6. Upload with gmpublish.exe
-        return await new Promise((resolve, reject) => {
-            const child = execFile(gmpublishExe, ['create', '-addon', outGma, '-icon', iconPath], (err, stdout, stderr) => {
+        // 6. Check if map is already published to Steam Workshop (to update instead of duplicate create)
+        const cachedPub = loadCachedPublishedNavmeshes();
+        const existingKey = mapName.toLowerCase();
+        let existingWorkshopId = cachedPub[existingKey]?.workshopId || null;
+
+        let publishArgs = ['create', '-addon', outGma, '-icon', iconPath];
+        if (existingWorkshopId) {
+            publishArgs = ['update', '-id', String(existingWorkshopId), '-addon', outGma, '-icon', iconPath];
+        }
+
+        // 7. Upload with gmpublish.exe
+        return await new Promise((resolve) => {
+            const child = execFile(gmpublishExe, publishArgs, async (err, stdout, stderr) => {
                 const combined = (stdout || '') + (stderr || '');
 
                 if (combined.includes("Couldn't initialize Steam")) {
@@ -198,30 +208,51 @@ async function publishNavmeshToWorkshop(gmodInfo, { mapName, title, description,
                     });
                 }
 
-                if (err && !combined.includes('Success')) {
+                // Query official gmpublish list first to verify true status directly from Steamworks
+                let publishedList = [];
+                try {
+                    publishedList = await listPublishedFiles(gmpublishExe);
+                } catch (_) {}
+
+                const matching = publishedList.find(item => 
+                    item.title === finalTitle ||
+                    item.title.toLowerCase().includes(mapName.toLowerCase()) ||
+                    (existingWorkshopId && item.id === String(existingWorkshopId))
+                );
+
+                if (matching) {
+                    recordPublishedNavmesh(mapName, {
+                        workshopId: matching.id,
+                        title: matching.title || finalTitle,
+                        url: `https://steamcommunity.com/sharedfiles/filedetails/?id=${matching.id}`
+                    });
                     return resolve({
-                        success: false,
-                        error: `Workshop upload failed: ${err.message}`,
+                        success: true,
+                        workshopId: matching.id,
+                        title: matching.title || finalTitle,
+                        url: `https://steamcommunity.com/sharedfiles/filedetails/?id=${matching.id}`,
+                        message: `Successfully published ${finalTitle} to Steam Workshop!`,
                         details: combined
                     });
                 }
 
-                // Query official gmpublish list to get the verified 10-digit Workshop ID (avoids 17-digit SteamID)
-                listPublishedFiles(gmpublishExe).then(publishedList => {
-                    let workshopId = null;
-                    const matching = publishedList.find(item => item.title === finalTitle);
-                    if (matching) {
-                        workshopId = matching.id;
-                    } else {
-                        const fallbackMatch = combined.match(/\b(\d{9,11})\b/);
-                        if (fallbackMatch && !fallbackMatch[1].startsWith('7656119')) {
-                            workshopId = fallbackMatch[1];
-                        } else if (publishedList.length > 0) {
-                            workshopId = publishedList[publishedList.length - 1].id;
-                        }
+                const isSuccessText = /success|done|created|updated/i.test(combined);
+                if (isSuccessText) {
+                    let workshopId = existingWorkshopId;
+                    const fallbackMatch = combined.match(/\b(\d{9,11})\b/);
+                    if (fallbackMatch && !fallbackMatch[1].startsWith('7656119')) {
+                        workshopId = fallbackMatch[1];
+                    } else if (!workshopId && publishedList.length > 0) {
+                        workshopId = publishedList[0].id;
                     }
 
-                    resolve({
+                    recordPublishedNavmesh(mapName, {
+                        workshopId,
+                        title: finalTitle,
+                        url: workshopId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${workshopId}` : null
+                    });
+
+                    return resolve({
                         success: true,
                         workshopId,
                         title: finalTitle,
@@ -229,15 +260,23 @@ async function publishNavmeshToWorkshop(gmodInfo, { mapName, title, description,
                         message: `Successfully published ${finalTitle} to Steam Workshop!`,
                         details: combined
                     });
-                }).catch(() => {
-                    resolve({
-                        success: true,
-                        workshopId: null,
-                        title: finalTitle,
-                        url: null,
-                        message: `Published ${finalTitle} to Steam Workshop!`,
+                }
+
+                if (err) {
+                    return resolve({
+                        success: false,
+                        error: `Workshop upload error: ${err.message}`,
                         details: combined
                     });
+                }
+
+                return resolve({
+                    success: true,
+                    workshopId: existingWorkshopId || null,
+                    title: finalTitle,
+                    url: existingWorkshopId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${existingWorkshopId}` : null,
+                    message: `Published ${finalTitle} to Steam Workshop!`,
+                    details: combined
                 });
             });
 

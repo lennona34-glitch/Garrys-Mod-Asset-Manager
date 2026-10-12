@@ -5,7 +5,7 @@
     "title": "[NavMesh] gm_infinity_pools",
     "size": "8.6 MB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818692361",
-    "updatedAt": 1791831872224
+    "updatedAt": 1791833586659
   },
   "gm_bikinibottom": {
     "mapName": "gm_bikinibottom",
@@ -13,7 +13,7 @@
     "title": "[NavMesh] gm_bikinibottom",
     "size": "873.9 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818207109",
-    "updatedAt": 1791831872224
+    "updatedAt": 1791833586659
   },
   "gm_garden_remake": {
     "mapName": "gm_garden_remake",
@@ -21,7 +21,7 @@
     "title": "[NavMesh] gm_garden_remake",
     "size": "29.6 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818683373",
-    "updatedAt": 1791831872224
+    "updatedAt": 1791833586659
   },
   "dd_ballroom": {
     "mapName": "dd_ballroom",
@@ -29,7 +29,7 @@
     "title": "[NavMesh] dd_ballroom",
     "size": "338.0 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818173744",
-    "updatedAt": 1791831872224
+    "updatedAt": 1791833586659
   },
   "rp_riteunn_felucia_night_v1": {
     "mapName": "rp_riteunn_felucia_night_v1",
@@ -37,6 +37,22 @@
     "title": "[NavMesh] rp_riteunn_felucia_night_v1",
     "size": "8.0 MB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3817353452",
-    "updatedAt": 1791831872224
+    "updatedAt": 1791833586659
+  },
+  "bloody_symphony": {
+    "mapName": "bloody_symphony",
+    "workshopId": "3818700418",
+    "title": "[NavMesh] bloody_symphony",
+    "size": "35.9 KB",
+    "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818700418",
+    "updatedAt": 1791833586659
+  },
+  "dd_hotel": {
+    "mapName": "dd_hotel",
+    "workshopId": "3818700725",
+    "title": "[NavMesh] dd_hotel",
+    "size": "1.1 MB",
+    "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818700725",
+    "updatedAt": 1791833586659
   }
 }

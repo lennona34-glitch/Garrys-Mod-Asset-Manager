@@ -550,6 +550,10 @@ body {
     position: absolute;
     top: 10px;
     left: 10px;
+    max-width: 52%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 3px 8px;
     border-radius: var(--radius-sm);
     font-size: 11px;
@@ -557,20 +561,27 @@ body {
     text-transform: uppercase;
     color: white;
     backdrop-filter: blur(8px);
-    background-color: rgba(0,0,0,0.6);
+    background-color: rgba(15, 23, 42, 0.75);
     border-left: 3px solid var(--accent-blue);
+    z-index: 2;
 }
 
 .badge-source {
     position: absolute;
     top: 10px;
     right: 10px;
+    max-width: 44%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 3px 8px;
     border-radius: var(--radius-sm);
     font-size: 10px;
     font-weight: 600;
     color: white;
-    background-color: rgba(0,0,0,0.6);
+    background-color: rgba(0,0,0,0.65);
+    backdrop-filter: blur(6px);
+    z-index: 2;
 }
 
 .map-card-body {
@@ -618,6 +629,27 @@ body {
 
 .pill-nav.none {
     color: var(--text-muted);
+}
+
+.pill-nav.pill-uploaded {
+    background: rgba(16, 185, 129, 0.14) !important;
+    color: #34d399 !important;
+    border: none !important;
+    border-radius: 9999px !important;
+    padding: 2px 8px !important;
+    font-weight: 600 !important;
+    font-size: 11px !important;
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-nav-cloud {
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.btn-nav-cloud:hover {
+    transform: scale(1.08);
 }
 
 .map-card-footer {

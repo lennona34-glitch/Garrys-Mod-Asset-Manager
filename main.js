@@ -415,11 +415,11 @@ function applyControllerTuning(gmodInfo, preset = 'smooth') {
     const controller360Path = path.join(cfgDir, '360controller.cfg');
 
     const controllerBlock = `// --- Modern Tactical Wireless Controller / Gamepad Tuning ---
-// 6/10 Calibrated Speed: Smooth aiming, 0.35x accel, no spinning spikes
-exec 360controller
+sc_enable "0"
 joystick "1"
 joy_advanced "1"
 joy_name "Xbox360 controller"
+exec 360controller
 
 // Axis Mapping (Guarantees sticks work across all maps & sessions)
 joy_advaxisx "3"
@@ -430,7 +430,6 @@ joy_advaxisu "4"
 joy_advaxisv "0"
 joyadvancedupdate
 +jlook
-sc_enable "1"
 
 // Look Sensitivity (Yaw / Pitch) - 6/10 Calibrated Smooth Look Speed
 joy_yawsensitivity "${yawSens}"

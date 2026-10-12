@@ -334,14 +334,15 @@ async function launchMap(gmodInfo, mapName, options = {}) {
     if (windowed) {
         args.push('-windowed', '-noborder');
         if (width && height) args.push('-w', String(width), '-h', String(height));
-    } else if (fullscreen) {
+    } else {
+        // Enforce Fullscreen DLDSR mode
         args.push('-fullscreen');
         if (width && height) args.push('-w', String(width), '-h', String(height));
     }
     if (gamemode) args.push('+gamemode', gamemode);
     args.push('+map', mapName);
-    // Guarantee wireless controller is initialized on boot
-    args.push('+exec', '360controller', '+joystick', '1', '+jlook');
+    // Guarantee wireless controller is initialized on boot without Steam Controller conflict
+    args.push('+sc_enable', '0', '+joystick', '1', '+joy_advanced', '1', '+exec', '360controller', '+jlook');
 
     if (extraArgs && extraArgs.trim()) {
         args.push(...extraArgs.trim().split(/\s+/));

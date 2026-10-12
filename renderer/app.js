@@ -630,6 +630,20 @@ function setupEventHandlers() {
             showToast('Packing error: ' + e.message, 'error');
         }
     });
+
+    // Restore and persist resolution preference
+    try {
+        const savedRes = localStorage.getItem('gmod_preferred_res');
+        const resEl = document.getElementById('optResolution');
+        if (savedRes && resEl) {
+            resEl.value = savedRes;
+        }
+        if (resEl) {
+            resEl.addEventListener('change', () => {
+                localStorage.setItem('gmod_preferred_res', resEl.value);
+            });
+        }
+    } catch (_) {}
 }
 
 // ---------------- MAPS HUB ----------------
@@ -716,7 +730,7 @@ function renderMaps() {
                         ${map.hasNav ? '● NavMesh Ready' : '○ No NavMesh'}
                     </span>
                     ${isPublished ? `
-                    <span class="pill-nav" style="background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); font-weight: 600;" title="Live on Steam Workshop (ID: ${pubInfo.workshopId || ''})">
+                    <span class="pill-nav pill-uploaded" title="Live on Steam Workshop (ID: ${pubInfo.workshopId || ''})">
                         ☁️ Uploaded
                     </span>` : ''}
                 </div>
@@ -727,11 +741,11 @@ function renderMaps() {
                     <span>Launch</span>
                 </button>
                 ${map.hasNav ? `
-                <button class="btn btn-secondary btn-icon" 
+                <button class="btn btn-secondary btn-icon btn-nav-cloud" 
                     title="${isPublished ? `NavMesh Uploaded to Steam Workshop! (${pubInfo.title || map.mapName}) - Click to manage or view on Workshop` : 'Publish NavMesh to Steam Workshop'}" 
                     data-action="publish-nav" 
                     data-map="${map.mapName}" 
-                    style="${isPublished ? 'color: #34d399; background: rgba(52, 211, 153, 0.15); border-color: rgba(52, 211, 153, 0.3);' : 'color: #38bdf8;'}">
+                    style="${isPublished ? 'color: #34d399; background: rgba(52, 211, 153, 0.14); border: none;' : 'color: #38bdf8;'}">
                     ${isPublished ? `
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><polyline points="9 11 12 14 20 6"/></svg>
                     ` : `
@@ -803,20 +817,21 @@ function launchSelectedMap(mapName) {
     const gamemode = document.getElementById('optDefaultGamemode').value || 'sandbox';
     const extraArgs = document.getElementById('optExtraArgs').value || '';
     const resEl = document.getElementById('optResolution');
-    const resVal = resEl ? resEl.value : '2560x1440';
+    const resVal = resEl ? resEl.value : 'native';
 
     if (resEl) {
         try { localStorage.setItem('gmod_preferred_res', resVal); } catch (_) {}
     }
 
-    let width = 2560;
-    let height = 1440;
+    let width = null;
+    let height = null;
     if (resVal === '3840x2160') { width = 3840; height = 2160; }
     else if (resVal === '2560x1440') { width = 2560; height = 1440; }
     else if (resVal === '1920x1080') { width = 1920; height = 1080; }
 
-    showToast(`Launching Garry's Mod directly into ${mapName} (${width}x${height})...`, 'info');
-    window.api.launchMap(mapName, { novid, noworkshop, windowed, width, height, gamemode, extraArgs })
+    const resLabel = (resVal === 'native' || !width) ? 'Native / DLDSR Fullscreen' : `${width}x${height}`;
+    showToast(`Launching Garry's Mod directly into ${mapName} (${resLabel})...`, 'info');
+    window.api.launchMap(mapName, { novid, noworkshop, fullscreen: !windowed, windowed, width, height, gamemode, extraArgs })
         .then(() => showToast(`Garry's Mod launched with map: ${mapName}!`, 'success'))
         .catch(err => showToast(`Launch failed: ${err.message}`, 'error'));
 }
