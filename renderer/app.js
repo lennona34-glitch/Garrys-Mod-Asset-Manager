@@ -21,7 +21,8 @@ const state = {
     wsPage: 1,
     wsHasMore: true,
     wsLoadingMore: false,
-    isZenMode: false
+    isZenMode: false,
+    publishedNavmeshes: {}
 };
 
 // Helpers
@@ -147,16 +148,21 @@ async function loadInitialData() {
         updateGmodStatus();
 
         if (state.gmodInfo && state.gmodInfo.gmodRoot) {
-            // High-speed parallel startup: Maps, Addons, Subscribed IDs, Diagnostics, Presets
-            const [maps, addons, subIds] = await Promise.all([
+            // High-speed parallel startup: Maps, Addons, Subscribed IDs, Published NavMeshes, Diagnostics, Presets
+            const [maps, addons, subIds, pubNavs] = await Promise.all([
                 refreshMaps(),
                 refreshAddons(),
                 window.api.getSubscribedWorkshopIds ? window.api.getSubscribedWorkshopIds().catch(() => []) : Promise.resolve([]),
+                window.api.getPublishedNavmeshes ? window.api.getPublishedNavmeshes().catch(() => ({})) : Promise.resolve({}),
                 refreshDiagnostics(),
                 refreshPresets()
             ]);
             if (Array.isArray(subIds) && subIds.length > 0) {
                 state.subscribedWorkshopIds = subIds;
+            }
+            if (pubNavs && typeof pubNavs === 'object') {
+                state.publishedNavmeshes = pubNavs;
+                renderMapsGrid(state.maps);
             }
 
             // Background pre-fetch of workshop (non-blocking)
@@ -279,7 +285,13 @@ function setupEventHandlers() {
     // Refresh button
     document.getElementById('btnRefresh').addEventListener('click', async () => {
         showToast('Refreshing data...', 'info');
-        await Promise.all([refreshMaps(), refreshAddons(), refreshStorage(), refreshDiagnostics()]);
+        await Promise.all([
+            refreshMaps(), 
+            refreshAddons(), 
+            refreshStorage(), 
+            refreshDiagnostics(),
+            window.api.getPublishedNavmeshes ? window.api.getPublishedNavmeshes().then(p => { if (p) { state.publishedNavmeshes = p; renderMapsGrid(state.maps); } }).catch(() => {}) : Promise.resolve()
+        ]);
         if (state.currentTab === 'workshop' && state.wsItems && state.wsItems.length > 0) {
             renderWorkshopGrid(state.wsItems);
         }
@@ -684,6 +696,8 @@ function renderMaps() {
             : `<div class="map-card-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg><span>${map.mapName}</span></div>`;
 
         const isNative = map.source === 'loose';
+        const pubInfo = state.publishedNavmeshes ? state.publishedNavmeshes[map.mapName.toLowerCase()] : null;
+        const isPublished = Boolean(pubInfo);
 
         card.innerHTML = `
             <div class="map-card-thumb">
@@ -701,6 +715,10 @@ function renderMaps() {
                     <span class="pill-nav ${map.hasNav ? '' : 'none'}">
                         ${map.hasNav ? '● NavMesh Ready' : '○ No NavMesh'}
                     </span>
+                    ${isPublished ? `
+                    <span class="pill-nav" style="background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); font-weight: 600;" title="Live on Steam Workshop (ID: ${pubInfo.workshopId || ''})">
+                        ☁️ Uploaded
+                    </span>` : ''}
                 </div>
             </div>
             <div class="map-card-footer">
@@ -709,8 +727,16 @@ function renderMaps() {
                     <span>Launch</span>
                 </button>
                 ${map.hasNav ? `
-                <button class="btn btn-secondary btn-icon" title="Publish NavMesh to Steam Workshop" data-action="publish-nav" data-map="${map.mapName}" style="color: #38bdf8;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+                <button class="btn btn-secondary btn-icon" 
+                    title="${isPublished ? `NavMesh Uploaded to Steam Workshop! (${pubInfo.title || map.mapName}) - Click to manage or view on Workshop` : 'Publish NavMesh to Steam Workshop'}" 
+                    data-action="publish-nav" 
+                    data-map="${map.mapName}" 
+                    style="${isPublished ? 'color: #34d399; background: rgba(52, 211, 153, 0.15); border-color: rgba(52, 211, 153, 0.3);' : 'color: #38bdf8;'}">
+                    ${isPublished ? `
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><polyline points="9 11 12 14 20 6"/></svg>
+                    ` : `
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+                    `}
                 </button>` : ''}
                 ${!isNative ? `
                 <button class="btn btn-secondary btn-icon" title="Extract loose .bsp to garrysmod/maps" data-action="extract" data-gma="${map.filePath}" data-internal="${map.internalMapPath}">
@@ -1138,14 +1164,52 @@ async function openPublishNavModal(mapName) {
     const descInput = document.getElementById('pubNavDescInput');
     const statusAlert = document.getElementById('pubNavStatusAlert');
     const btnConfirm = document.getElementById('btnConfirmPublishNav');
+    const btnCancel = document.getElementById('btnCancelPublishNav');
 
-    statusAlert.style.display = 'none';
-    statusAlert.innerHTML = '';
+    if (btnCancel) btnCancel.textContent = 'Cancel';
     btnConfirm.disabled = false;
-    btnConfirm.innerHTML = `
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
-        <span>Upload to Steam Workshop</span>
-    `;
+    btnConfirm.dataset.completed = 'false';
+
+    const pubInfo = state.publishedNavmeshes ? state.publishedNavmeshes[mapName.toLowerCase()] : null;
+    const isAlreadyPublished = Boolean(pubInfo);
+
+    if (isAlreadyPublished) {
+        statusAlert.style.display = 'block';
+        statusAlert.style.background = 'rgba(52, 211, 153, 0.15)';
+        statusAlert.style.color = '#34d399';
+        statusAlert.style.border = '1px solid rgba(52, 211, 153, 0.3)';
+        statusAlert.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <strong>☁️ Already Uploaded:</strong> Live on Steam Workshop (ID: ${pubInfo.workshopId || 'Active'})
+                </div>
+                ${pubInfo.workshopId ? `
+                <button class="btn btn-secondary btn-xs" id="btnViewLiveWsItem" style="padding: 2px 8px; font-size: 11px;">
+                    View on Workshop ↗
+                </button>` : ''}
+            </div>
+        `;
+        setTimeout(() => {
+            const btnView = document.getElementById('btnViewLiveWsItem');
+            if (btnView && pubInfo.workshopId) {
+                btnView.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.api.openSteamClient(pubInfo.workshopId);
+                });
+            }
+        }, 10);
+        btnConfirm.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+            <span>Update on Steam Workshop</span>
+        `;
+    } else {
+        statusAlert.style.display = 'none';
+        statusAlert.innerHTML = '';
+        btnConfirm.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+            <span>Upload to Steam Workshop</span>
+        `;
+    }
 
     targetLabel.textContent = mapName;
     sizeLabel.textContent = 'Loading details...';
@@ -1184,6 +1248,10 @@ function closePublishNavModal() {
 async function executePublishNavmesh() {
     if (!currentPublishingMap) return;
     const btnConfirm = document.getElementById('btnConfirmPublishNav');
+    if (btnConfirm && btnConfirm.dataset.completed === 'true') {
+        closePublishNavModal();
+        return;
+    }
     const statusAlert = document.getElementById('pubNavStatusAlert');
     const titleInput = document.getElementById('pubNavTitleInput');
     const descInput = document.getElementById('pubNavDescInput');
@@ -1207,6 +1275,19 @@ async function executePublishNavmesh() {
         });
 
         if (res.success) {
+            // Update state.publishedNavmeshes immediately!
+            if (!state.publishedNavmeshes) state.publishedNavmeshes = {};
+            state.publishedNavmeshes[currentPublishingMap.toLowerCase()] = {
+                mapName: currentPublishingMap,
+                workshopId: res.workshopId,
+                title: res.title,
+                url: res.url,
+                updatedAt: Date.now()
+            };
+
+            // Re-render the map grid right away so the cloud icon turns green with checkmark!
+            renderMapsGrid(state.maps);
+
             statusAlert.style.background = 'rgba(34, 197, 94, 0.15)';
             statusAlert.style.color = '#4ade80';
             statusAlert.style.border = '1px solid rgba(34, 197, 94, 0.3)';
@@ -1225,7 +1306,12 @@ async function executePublishNavmesh() {
                     });
                 }
             }
+            btnConfirm.disabled = false;
+            btnConfirm.dataset.completed = 'true';
             btnConfirm.innerHTML = `✓ Upload Complete`;
+            const btnCancel = document.getElementById('btnCancelPublishNav');
+            if (btnCancel) btnCancel.textContent = 'Close';
+
             showToast(`Published [NavMesh] ${currentPublishingMap} to Steam Workshop!`, 'success');
         } else {
             statusAlert.style.background = 'rgba(239, 68, 68, 0.15)';
@@ -1233,6 +1319,7 @@ async function executePublishNavmesh() {
             statusAlert.style.border = '1px solid rgba(239, 68, 68, 0.3)';
             statusAlert.innerHTML = `⚠️ ${res.error || 'Upload failed'}`;
             btnConfirm.disabled = false;
+            btnConfirm.dataset.completed = 'false';
             btnConfirm.innerHTML = `Retry Upload`;
         }
     } catch (err) {
@@ -1242,6 +1329,7 @@ async function executePublishNavmesh() {
         statusAlert.style.border = '1px solid rgba(239, 68, 68, 0.3)';
         statusAlert.innerHTML = `⚠️ Error: ${err.message}`;
         btnConfirm.disabled = false;
+        btnConfirm.dataset.completed = 'false';
         btnConfirm.innerHTML = `Retry Upload`;
     }
 }

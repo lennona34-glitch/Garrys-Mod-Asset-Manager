@@ -10,7 +10,7 @@ const { analyzeStorage, cleanTarget } = require('./src/storageCleaner');
 const { fetchPublishedFileDetails, searchWorkshop, openInSteamClient, openInBrowser, openSteamWorkshopHub, openSteamUrl } = require('./src/workshopService');
 const { loadPresets, createPreset, deletePreset, applyPreset } = require('./src/presetsManager');
 const { runDiagnostics, fixAddonConflict, undoAddonConflict, getDismissedNavState, dismissNavMap, dismissAllNavMaps, restoreNavMaps } = require('./src/diagnosticsManager');
-const { getDefaultTitle, getDefaultDescription, publishNavmeshToWorkshop } = require('./src/workshopPublisher');
+const { getDefaultTitle, getDefaultDescription, publishNavmeshToWorkshop, getPublishedNavmeshes, recordPublishedNavmesh } = require('./src/workshopPublisher');
 
 let mainWindow = null;
 let currentGmodInfo = null;
@@ -371,9 +371,18 @@ ipcMain.handle('get-publish-navmesh-meta', async (event, mapName) => {
     };
 });
 
+ipcMain.handle('get-published-navmeshes', async () => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return await getPublishedNavmeshes(currentGmodInfo);
+});
+
 ipcMain.handle('publish-navmesh', async (event, { mapName, title, description, tags }) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
-    return await publishNavmeshToWorkshop(currentGmodInfo, { mapName, title, description, tags }, nativeImage);
+    const res = await publishNavmeshToWorkshop(currentGmodInfo, { mapName, title, description, tags }, nativeImage);
+    if (res && res.success) {
+        recordPublishedNavmesh(mapName, res);
+    }
+    return res;
 });
 
 function applyControllerTuning(gmodInfo, preset = 'smooth') {
@@ -407,9 +416,21 @@ function applyControllerTuning(gmodInfo, preset = 'smooth') {
 
     const controllerBlock = `// --- Modern Tactical Wireless Controller / Gamepad Tuning ---
 // 6/10 Calibrated Speed: Smooth aiming, 0.35x accel, no spinning spikes
+exec 360controller
 joystick "1"
 joy_advanced "1"
 joy_name "Xbox360 controller"
+
+// Axis Mapping (Guarantees sticks work across all maps & sessions)
+joy_advaxisx "3"
+joy_advaxisy "1"
+joy_advaxisz "0"
+joy_advaxisr "2"
+joy_advaxisu "4"
+joy_advaxisv "0"
+joyadvancedupdate
++jlook
+sc_enable "1"
 
 // Look Sensitivity (Yaw / Pitch) - 6/10 Calibrated Smooth Look Speed
 joy_yawsensitivity "${yawSens}"

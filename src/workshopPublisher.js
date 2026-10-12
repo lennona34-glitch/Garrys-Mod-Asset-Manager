@@ -260,9 +260,75 @@ async function publishNavmeshToWorkshop(gmodInfo, { mapName, title, description,
     }
 }
 
+const PUBLISHED_NAVMESHES_FILE = path.join(__dirname, '..', 'data', 'published_navmeshes.json');
+
+function loadCachedPublishedNavmeshes() {
+    try {
+        if (fs.existsSync(PUBLISHED_NAVMESHES_FILE)) {
+            return JSON.parse(fs.readFileSync(PUBLISHED_NAVMESHES_FILE, 'utf8'));
+        }
+    } catch (_) {}
+    return {};
+}
+
+function savePublishedNavmeshes(data) {
+    try {
+        const dir = path.dirname(PUBLISHED_NAVMESHES_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(PUBLISHED_NAVMESHES_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+        console.error('Failed to save published navmeshes file:', e);
+    }
+}
+
+async function getPublishedNavmeshes(gmodInfo) {
+    const cached = loadCachedPublishedNavmeshes();
+    const gmpublishExe = gmodInfo?.gmpublishExe || (gmodInfo?.gmodRoot ? path.join(gmodInfo.gmodRoot, 'bin', 'gmpublish.exe') : null);
+
+    if (gmpublishExe && fs.existsSync(gmpublishExe)) {
+        try {
+            const files = await listPublishedFiles(gmpublishExe);
+            for (const item of files) {
+                const m = item.title.match(/\[NavMesh\]\s*(.+)/i);
+                const mapName = m ? m[1].trim() : item.title.trim();
+                const key = mapName.toLowerCase();
+                cached[key] = {
+                    mapName,
+                    workshopId: item.id,
+                    title: item.title,
+                    size: item.size,
+                    url: `https://steamcommunity.com/sharedfiles/filedetails/?id=${item.id}`,
+                    updatedAt: Date.now()
+                };
+            }
+            savePublishedNavmeshes(cached);
+        } catch (e) {
+            console.warn('Could not query gmpublish list:', e);
+        }
+    }
+    return cached;
+}
+
+function recordPublishedNavmesh(mapName, details) {
+    const cached = loadCachedPublishedNavmeshes();
+    const key = mapName.toLowerCase();
+    cached[key] = {
+        mapName,
+        workshopId: details.workshopId || null,
+        title: details.title || `[NavMesh] ${mapName}`,
+        url: details.url || (details.workshopId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${details.workshopId}` : null),
+        updatedAt: Date.now()
+    };
+    savePublishedNavmeshes(cached);
+    return cached;
+}
+
 module.exports = {
     getDefaultTitle,
     getDefaultDescription,
     prepareIcon,
-    publishNavmeshToWorkshop
+    publishNavmeshToWorkshop,
+    getPublishedNavmeshes,
+    recordPublishedNavmesh
 };
+

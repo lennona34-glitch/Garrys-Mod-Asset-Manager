@@ -113,6 +113,8 @@ function buildGmodInfo(gmodRoot, steamPath = null, steamLibraryPath = null) {
         else if (fs.existsSync(ws2)) workshopDir = ws2;
     }
 
+    const gmpublishExe = path.join(gmodRoot, 'bin', 'gmpublish.exe');
+
     return {
         gmodRoot,
         garrysmodDir,
@@ -122,6 +124,7 @@ function buildGmodInfo(gmodRoot, steamPath = null, steamLibraryPath = null) {
         downloadListsDir,
         workshopDir,
         gmadExe: fs.existsSync(gmadExe) ? gmadExe : null,
+        gmpublishExe: fs.existsSync(gmpublishExe) ? gmpublishExe : null,
         gmodExe: fs.existsSync(gmodWin64Exe) ? gmodWin64Exe : (fs.existsSync(gmodExe) ? gmodExe : null),
         steamPath: steamPath || getSteamPathFromRegistry()
     };

@@ -313,9 +313,10 @@ async function launchMap(gmodInfo, mapName, options = {}) {
     const {
         novid = true,
         noworkshop = false,
-        windowed = true,
-        width = 2560,
-        height = 1440,
+        fullscreen = true,
+        windowed = false,
+        width = null,
+        height = null,
         gamemode = 'sandbox',
         extraArgs = ''
     } = options;
@@ -330,10 +331,17 @@ async function launchMap(gmodInfo, mapName, options = {}) {
     const args = ['-condebug'];
     if (novid) args.push('-novid');
     if (noworkshop) args.push('-noworkshop');
-    if (windowed) args.push('-windowed', '-noborder');
-    if (width && height) args.push('-w', String(width), '-h', String(height));
+    if (windowed) {
+        args.push('-windowed', '-noborder');
+        if (width && height) args.push('-w', String(width), '-h', String(height));
+    } else if (fullscreen) {
+        args.push('-fullscreen');
+        if (width && height) args.push('-w', String(width), '-h', String(height));
+    }
     if (gamemode) args.push('+gamemode', gamemode);
     args.push('+map', mapName);
+    // Guarantee wireless controller is initialized on boot
+    args.push('+exec', '360controller', '+joystick', '1', '+jlook');
 
     if (extraArgs && extraArgs.trim()) {
         args.push(...extraArgs.trim().split(/\s+/));
