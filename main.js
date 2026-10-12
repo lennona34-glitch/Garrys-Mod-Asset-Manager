@@ -385,30 +385,44 @@ ipcMain.handle('publish-navmesh', async (event, { mapName, title, description, t
     return res;
 });
 
-function applyControllerTuning(gmodInfo, preset = 'smooth') {
+function applyControllerTuning(gmodInfo, options = 7) {
     if (!gmodInfo || !gmodInfo.garrysmodDir) return { success: false, error: 'GMod path not found' };
     const cfgDir = path.join(gmodInfo.garrysmodDir, 'cfg');
     if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
 
-    let yawSens = '-0.90';
-    let pitchSens = '0.65';
-    let accelScale = '0.45';
-    let accelMax = '1.10';
-    let mouseSens = '1.85';
+    let speed = 7;
+    let enableSmoothing = true;
 
-    if (preset === 'cinematic') {
-        yawSens = '-0.65';
-        pitchSens = '0.50';
-        accelScale = '0.35';
-        accelMax = '0.85';
-        mouseSens = '1.50';
-    } else if (preset === 'arcade') {
-        yawSens = '-1.25';
-        pitchSens = '0.85';
-        accelScale = '0.65';
-        accelMax = '1.35';
-        mouseSens = '2.40';
+    if (typeof options === 'object' && options !== null) {
+        if (options.speed !== undefined) speed = Number(options.speed) || 7;
+        if (options.smoothing !== undefined) enableSmoothing = Boolean(options.smoothing);
+    } else if (typeof options === 'number') {
+        speed = options;
+    } else if (typeof options === 'string') {
+        if (/^\d+$/.test(options)) {
+            speed = parseInt(options, 10);
+        } else if (options === 'cinematic') {
+            speed = 4;
+        } else if (options === 'smooth') {
+            speed = 6;
+        } else if (options === 'snappy') {
+            speed = 7;
+        } else if (options === 'arcade') {
+            speed = 8;
+        }
     }
+
+    speed = Math.max(1, Math.min(10, Math.round(speed)));
+
+    // Look Sensitivity & Accel calibrated dynamically around user's 1-10 scale
+    const steamMouseSens = String(Math.round(25 + (speed * 12)));
+    const yawSens = (-0.45 - (speed * 0.09)).toFixed(2);
+    const pitchSens = (0.35 + (speed * 0.06)).toFixed(2);
+    const mouseSens = (1.20 + (speed * 0.12)).toFixed(2);
+    const accelScale = (0.35 + (speed * 0.02)).toFixed(2);
+    const accelMax = (0.85 + (speed * 0.04)).toFixed(2);
+    const steamSmoothingAmount = enableSmoothing ? '20' : '0';
+    const steamCurveExponent = enableSmoothing ? '112' : '100';
 
     const autoexecPath = path.join(cfgDir, 'autoexec.cfg');
     const configPath = path.join(cfgDir, 'config.cfg');
@@ -576,10 +590,6 @@ end)
 
     // 6. Update Steam Input Workshop Profile 923095811 and configset bindings
     try {
-        let steamMouseSens = '58';
-        if (preset === 'cinematic') steamMouseSens = '45';
-        else if (preset === 'arcade') steamMouseSens = '75';
-
         const legacyBinPath = 'C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\241100\\923095811\\838078270046996915_legacy.bin';
         if (fs.existsSync(legacyBinPath)) {
             let binContent = fs.readFileSync(legacyBinPath, 'utf8');
@@ -617,10 +627,10 @@ end)
 			"output_joystick"		"2"
 			"sensitivity"		"${steamMouseSens}"
 			"sensitivity_vert_scale"		"85"
-			"mouse_smoothing"		"28"
+			"mouse_smoothing"		"${steamSmoothingAmount}"
 			"deadzone"		"2000"
 			"anti_deadzone"		"2000"
-			"custom_curve_exponent"		"130"
+			"custom_curve_exponent"		"${steamCurveExponent}"
 		}
 	}`;
             binContent = binContent.replace(/"group"\s*\{\s*"id"\s*"7"[\s\S]*?\n\t\}/, group7Block);
@@ -657,12 +667,12 @@ end)
         console.warn('Steam Input profile synchronization warning:', e);
     }
 
-    return { success: true, preset, yawSens, pitchSens, mouseSens };
+    return { success: true, speed, smoothing: enableSmoothing, steamMouseSens, yawSens, pitchSens, mouseSens };
 }
 
-ipcMain.handle('apply-controller-tuning', async (event, preset = 'smooth') => {
+ipcMain.handle('apply-controller-tuning', async (event, options = 7) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
-    return applyControllerTuning(currentGmodInfo, preset);
+    return applyControllerTuning(currentGmodInfo, options);
 });
 
 

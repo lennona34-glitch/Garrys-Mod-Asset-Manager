@@ -534,23 +534,93 @@ function setupEventHandlers() {
         });
     }
 
-    // Wireless Controller Tuning
+    // Wireless Controller / Gamepad Tuning
+    const rngControllerSpeed = document.getElementById('rngControllerSpeed');
+    const chkControllerSmoothing = document.getElementById('chkControllerSmoothing');
     const btnController = document.getElementById('btnApplyControllerTuning');
-    const optControllerPreset = document.getElementById('optControllerPreset');
-    if (optControllerPreset) {
-        const savedPreset = localStorage.getItem('gmod_controller_preset') || 'smooth';
-        optControllerPreset.value = savedPreset;
+    const controllerQuickChips = document.getElementById('controllerQuickChips');
+
+    function updateControllerTuningUI(speed) {
+        const descriptions = {
+            1: '1 / 10 (Ultra Slow Precision)',
+            2: '2 / 10 (Very Slow)',
+            3: '3 / 10 (Slow Precision)',
+            4: '4 / 10 (Precision / Posing)',
+            5: '5 / 10 (Cinematic Smooth)',
+            6: '6 / 10 (Balanced Tactical)',
+            7: '7 / 10 (Snappy Tactical)',
+            8: '8 / 10 (Fast Twitch)',
+            9: '9 / 10 (Very Fast)',
+            10: '10 / 10 (Twitch Spin)'
+        };
+        const lblSpeed = document.getElementById('lblControllerSpeed');
+        if (lblSpeed) {
+            lblSpeed.textContent = descriptions[speed] || `${speed} / 10`;
+        }
+
+        const steamSens = Math.round(25 + (speed * 12));
+        const yawSens = (-0.45 - (speed * 0.09)).toFixed(2);
+        const mouseSens = (1.20 + (speed * 0.12)).toFixed(2);
+
+        const lblSteamSensVal = document.getElementById('lblSteamSensVal');
+        const lblYawVal = document.getElementById('lblYawVal');
+        const lblMouseSensVal = document.getElementById('lblMouseSensVal');
+        if (lblSteamSensVal) lblSteamSensVal.textContent = steamSens;
+        if (lblYawVal) lblYawVal.textContent = yawSens;
+        if (lblMouseSensVal) lblMouseSensVal.textContent = mouseSens;
+
+        const chips = document.querySelectorAll('#controllerQuickChips .chip');
+        chips.forEach(chip => {
+            const chipSpeed = parseInt(chip.getAttribute('data-speed'), 10);
+            if (chipSpeed === speed) {
+                chip.classList.add('active');
+            } else {
+                chip.classList.remove('active');
+            }
+        });
     }
-    if (btnController && optControllerPreset) {
+
+    if (rngControllerSpeed && btnController) {
+        const savedSpeed = parseInt(localStorage.getItem('gmod_controller_speed') || '7', 10);
+        const savedSmoothing = localStorage.getItem('gmod_controller_smoothing') !== 'false';
+        
+        rngControllerSpeed.value = savedSpeed;
+        if (chkControllerSmoothing) chkControllerSmoothing.checked = savedSmoothing;
+        updateControllerTuningUI(savedSpeed);
+
+        rngControllerSpeed.addEventListener('input', () => {
+            const currentSpeed = parseInt(rngControllerSpeed.value, 10);
+            updateControllerTuningUI(currentSpeed);
+        });
+
+        if (controllerQuickChips) {
+            controllerQuickChips.addEventListener('click', (e) => {
+                const chip = e.target.closest('.chip');
+                if (chip && chip.dataset.speed) {
+                    const presetSpeed = parseInt(chip.dataset.speed, 10);
+                    rngControllerSpeed.value = presetSpeed;
+                    updateControllerTuningUI(presetSpeed);
+                }
+            });
+        }
+
         btnController.addEventListener('click', async () => {
-            const preset = optControllerPreset.value;
+            const speed = parseInt(rngControllerSpeed.value, 10);
+            const smoothing = chkControllerSmoothing ? chkControllerSmoothing.checked : true;
             btnController.disabled = true;
             btnController.innerHTML = `<span>Applying Tuning...</span>`;
             try {
-                const res = await window.api.applyControllerTuning(preset);
+                const res = await window.api.applyControllerTuning({ speed, smoothing });
                 if (res.success) {
-                    localStorage.setItem('gmod_controller_preset', preset);
-                    showToast(`🎮 Wireless controller tuned (${preset})! Look: ${res.yawSens}, Mouse Sens: ${res.mouseSens}`, 'success');
+                    localStorage.setItem('gmod_controller_speed', speed.toString());
+                    localStorage.setItem('gmod_controller_smoothing', smoothing.toString());
+                    showToast(`🎮 Wireless controller tuned (${speed}/10)! Steam: ${res.steamMouseSens}, Yaw: ${res.yawSens}, Mouse Sens: ${res.mouseSens}`, 'success');
+                    const badge = document.getElementById('controllerStatusBadge');
+                    if (badge) {
+                        badge.textContent = `Active (${speed}/10)`;
+                        badge.style.color = '#38bdf8';
+                        badge.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+                    }
                 } else {
                     showToast(`Failed: ${res.error}`, 'error');
                 }
@@ -560,7 +630,7 @@ function setupEventHandlers() {
                 btnController.disabled = false;
                 btnController.innerHTML = `
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                    <span>Re-Apply Controller Tuning</span>
+                    <span>Save & Apply Controller Tuning</span>
                 `;
             }
         });

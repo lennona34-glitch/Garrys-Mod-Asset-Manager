@@ -367,24 +367,63 @@
                         </div>
                     </div>
 
-                    <div class="card settings-card">
+                    <div class="card settings-card" id="cardControllerTuning">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <h3 style="margin-bottom: 0;">🎮 Wireless Controller / Gamepad Tuning</h3>
-                            <span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #34d399; border: 1px solid rgba(34, 197, 94, 0.4); padding: 4px 8px; font-size: 11px;">Tuned Active</span>
+                            <span id="controllerStatusBadge" class="badge" style="background: rgba(34, 197, 94, 0.2); color: #34d399; border: 1px solid rgba(34, 197, 94, 0.4); padding: 4px 8px; font-size: 11px;">Synchronized & Active</span>
                         </div>
-                        <p class="card-desc">Modernizes Garry's Mod with console shooter controls: <strong>R1 & B</strong> = Crouch, <strong>R3 Click</strong> = Constant Running Toggle, <strong>L3 Click</strong> = Console Chat, and smooth 6/10 look speed (no spinning).</p>
-                        <div class="form-group" style="margin-top: 15px;">
-                            <label>Sensitivity & Acceleration Preset:</label>
-                            <select id="optControllerPreset" style="width: 100%; background: #131b26; border: 1px solid rgba(255,255,255,0.12); color: #f8fafc; padding: 9px 12px; border-radius: 6px; font-size: 13px; font-family: inherit;">
-                                <option value="smooth" selected>6/10 Smooth Tactical (Recommended) — -0.40x Look, 0.35x Accel, 1.65 Mouse</option>
-                                <option value="cinematic">Cinematic / Precision Slow — -0.25x Look, 0.20x Accel (Posing & filming)</option>
-                                <option value="arcade">Arcade Fast — -0.60x Look, 0.50x Accel (Snappier turns)</option>
-                            </select>
+                        <p class="card-desc">Modern console shooter controls: <strong>R1 & B</strong> = Crouch, <strong>R3 Click</strong> = Toggle Constant Run, <strong>L3 Click</strong> = Console Chat. Live-synced across Steam Input and Source Engine.</p>
+
+                        <!-- Look Speed Slider & Value -->
+                        <div class="form-group" style="margin-top: 18px; margin-bottom: 12px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <label style="font-weight: 600; margin-bottom: 0;">Look & Aim Speed (1 – 10):</label>
+                                <span id="lblControllerSpeed" style="font-weight: 700; color: #38bdf8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); padding: 2px 10px; border-radius: 6px; font-size: 13px; font-family: var(--font-mono);">7 / 10 (Snappy Tactical)</span>
+                            </div>
+                            <input type="range" id="rngControllerSpeed" min="1" max="10" step="1" value="7" style="width: 100%; accent-color: #38bdf8; cursor: pointer; height: 8px; border-radius: 4px; background: #0e1420; margin: 8px 0;">
+                            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                                <span>1 (Ultra Slow Precision)</span>
+                                <span>6 (Balanced)</span>
+                                <span>7 (Snappy Tactical)</span>
+                                <span>10 (Twitch Spin)</span>
+                            </div>
                         </div>
-                        <div style="display: flex; gap: 10px; margin-top: 15px;">
-                            <button class="btn btn-primary" id="btnApplyControllerTuning">
+
+                        <!-- Quick Presets -->
+                        <div class="form-group" style="margin-bottom: 14px;">
+                            <label style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; display: block;">Quick Presets:</label>
+                            <div class="filter-chips" id="controllerQuickChips">
+                                <div class="chip" data-speed="4">4 / 10 Precision Slow</div>
+                                <div class="chip" data-speed="5">5 / 10 Cinematic</div>
+                                <div class="chip" data-speed="6">6 / 10 Balanced Smooth</div>
+                                <div class="chip active" data-speed="7">7 / 10 Snappy Tactical (Recommended)</div>
+                                <div class="chip" data-speed="8">8 / 10 Fast Twitch</div>
+                            </div>
+                        </div>
+
+                        <!-- Anti-Jitter Smoothing Toggle -->
+                        <div style="background: rgba(14, 165, 233, 0.05); border: 1px solid rgba(14, 165, 233, 0.15); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 16px;">
+                            <label class="checkbox-container" style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; user-select: none; margin-bottom: 0;">
+                                <input type="checkbox" id="chkControllerSmoothing" checked style="accent-color: #38bdf8; width: 17px; height: 17px; margin-top: 2px; cursor: pointer;">
+                                <div style="display: flex; flex-direction: column;">
+                                    <span style="font-weight: 600; color: var(--text-primary); font-size: 13px;">Anti-Jitter Liquid Smoothing</span>
+                                    <span style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">Eliminates slow-panning micro-stutters and wireless analog deadzone noise while keeping fast turns crisp and immediate.</span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- Live Specs Footer & Apply Button -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                            <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">
+                                <span>Steam: <strong id="lblSteamSensVal" style="color: #94a3b8;">109</strong></span>
+                                <span>•</span>
+                                <span>Yaw: <strong id="lblYawVal" style="color: #94a3b8;">-1.08</strong></span>
+                                <span>•</span>
+                                <span>Mouse Sens: <strong id="lblMouseSensVal" style="color: #94a3b8;">2.04</strong></span>
+                            </div>
+                            <button class="btn btn-primary" id="btnApplyControllerTuning" style="padding: 8px 16px;">
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                <span>Re-Apply Controller Tuning</span>
+                                <span>Save & Apply Controller Tuning</span>
                             </button>
                         </div>
                     </div>
