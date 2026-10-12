@@ -348,7 +348,24 @@ async function launchMap(gmodInfo, mapName, options = {}) {
         args.push(...extraArgs.trim().split(/\s+/));
     }
 
-    // If gmodExe exists, spawn directly
+    // Primary: Launch via steam.exe -applaunch 4000 so Steam tracks process lifecycle,
+    // keeping Steam Input and wireless controller hooks anchored across map changes and gamemode transitions
+    const steamExePath = gmodInfo.steamPath ? path.join(gmodInfo.steamPath, 'steam.exe') : 'C:\\Program Files (x86)\\Steam\\steam.exe';
+    if (fs.existsSync(steamExePath)) {
+        try {
+            const steamArgs = ['-applaunch', '4000', ...args];
+            const proc = spawn(steamExePath, steamArgs, {
+                detached: true,
+                stdio: 'ignore'
+            });
+            proc.unref();
+            return { success: true, method: 'steam_applaunch', executable: steamExePath, args: steamArgs };
+        } catch (e) {
+            console.warn('Failed to launch via steam.exe -applaunch, falling back to direct executable:', e);
+        }
+    }
+
+    // Secondary fallback: Direct executable spawn
     if (gmodInfo.gmodExe && fs.existsSync(gmodInfo.gmodExe)) {
         const proc = spawn(gmodInfo.gmodExe, args, {
             cwd: path.dirname(gmodInfo.gmodExe),
@@ -359,7 +376,7 @@ async function launchMap(gmodInfo, mapName, options = {}) {
         return { success: true, method: 'direct_executable', executable: gmodInfo.gmodExe, args };
     }
 
-    // Fallback: Launch via Steam URL protocol
+    // Tertiary fallback: Steam URL protocol
     const steamUrl = `steam://run/4000//${encodeURIComponent(args.join(' '))}`;
     exec(`start "" "${steamUrl}"`);
     return { success: true, method: 'steam_protocol', url: steamUrl, args };

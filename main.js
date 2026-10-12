@@ -520,7 +520,17 @@ bind "b" "+duck"`;
     fs.writeFileSync(controller360Path, controllerBlock, 'utf8');
     fs.writeFileSync(joystickPath, controllerBlock, 'utf8');
 
-    // 3. Update config.cfg if present
+    // 3. Keep joystick 1 in undo360controller.cfg
+    const undoPath = path.join(cfgDir, 'undo360controller.cfg');
+    if (fs.existsSync(undoPath)) {
+        try {
+            let undoContent = fs.readFileSync(undoPath, 'utf8');
+            undoContent = undoContent.replace(/joystick\s+0/g, 'joystick 1');
+            fs.writeFileSync(undoPath, undoContent, 'utf8');
+        } catch (_) {}
+    }
+
+    // 4. Update config.cfg if present
     if (fs.existsSync(configPath)) {
         try {
             let configContent = fs.readFileSync(configPath, 'utf8');
@@ -532,6 +542,79 @@ bind "b" "+duck"`;
             configContent = configContent.replace(/bind "b" "[^"]*"/, `bind "b" "+duck"`);
             fs.writeFileSync(configPath, configContent, 'utf8');
         } catch (_) {}
+    }
+
+    // 5. Ensure client autorun keepalive Lua hook is in place
+    try {
+        const clientAutorun = path.join(gmodInfo.garrysmodDir, 'lua', 'autorun', 'client');
+        if (!fs.existsSync(clientAutorun)) fs.mkdirSync(clientAutorun, { recursive: true });
+        const keepalivePath = path.join(clientAutorun, 'zz_controller_keepalive.lua');
+        const keepaliveLua = `-- Modern Wireless Controller Keepalive & Layout Enforcement
+local function EnsureController()
+    RunConsoleCommand("joystick", "1")
+    RunConsoleCommand("joy_advanced", "1")
+    RunConsoleCommand("exec", "joystick.cfg")
+end
+hook.Add("InitPostEntity", "ControllerKeepalive_InitPostEntity", function()
+    timer.Simple(0.5, EnsureController)
+    timer.Simple(2.5, EnsureController)
+end)
+hook.Add("OnScreenSizeChanged", "ControllerKeepalive_ScreenSize", function()
+    EnsureController()
+end)
+timer.Create("ControllerKeepalive_Heartbeat", 8, 0, function()
+    local joy = GetConVar("joystick")
+    if joy and joy:GetInt() == 0 then
+        EnsureController()
+    end
+end)
+`;
+        fs.writeFileSync(keepalivePath, keepaliveLua, 'utf8');
+    } catch (_) {}
+
+    // 6. Update Steam Input Workshop Profile 923095811 and configset bindings
+    try {
+        let steamMouseSens = '60';
+        if (preset === 'cinematic') steamMouseSens = '45';
+        else if (preset === 'arcade') steamMouseSens = '85';
+
+        const legacyBinPath = 'C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\241100\\923095811\\838078270046996915_legacy.bin';
+        if (fs.existsSync(legacyBinPath)) {
+            let binContent = fs.readFileSync(legacyBinPath, 'utf8');
+            binContent = binContent.replace(/\"sensitivity\"\s+\"\d+\"/g, `"sensitivity"\t\t"${steamMouseSens}"`);
+            binContent = binContent.replace(/\"button_B\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/g, '"button_B"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
+            binContent = binContent.replace(/\"right_bumper\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/g, '"right_bumper"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
+            fs.writeFileSync(legacyBinPath, binContent, 'utf8');
+        }
+
+        // Ensure all Steam Controller ConfigSet files link AppID 4000 to workshop 923095811
+        const configDirs = [
+            'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Steam Controller Configs\\865848147\\config',
+            'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Steam Controller Configs\\459479298\\config'
+        ];
+        const targetFiles = [
+            'configset_3537-1040-339bcb53.vdf',
+            'configset_3537-1040-339bcb53g.vdf',
+            'configset_controller_xbox360.vdf',
+            'configset_controller_xboxone.vdf',
+            'configset_controller_generic.vdf'
+        ];
+        for (const dir of configDirs) {
+            if (!fs.existsSync(dir)) continue;
+            for (const f of targetFiles) {
+                const cfgPath = path.join(dir, f);
+                let content = fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf8') : '"controller_config"\n{\n}\n';
+                if (!content.includes('"4000"')) {
+                    const lastBrace = content.lastIndexOf('}');
+                    if (lastBrace !== -1) {
+                        content = content.slice(0, lastBrace) + '\t"4000"\n\t{\n\t\t"workshop"\t\t"923095811"\n\t}\n' + content.slice(lastBrace);
+                        fs.writeFileSync(cfgPath, content, 'utf8');
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Steam Input profile synchronization warning:', e);
     }
 
     return { success: true, preset, yawSens, pitchSens, mouseSens };
