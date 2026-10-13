@@ -796,13 +796,19 @@ function renderMaps() {
                 </div>
                 <div class="map-meta-row">
                     <span>${formatBytes(map.fileSize)}</span>
-                    <span class="pill-nav ${map.hasNav ? '' : 'none'}">
-                        ${map.hasNav ? '● NavMesh Ready' : '○ No NavMesh'}
-                    </span>
                     ${isPublished ? `
                     <span class="pill-nav pill-uploaded" title="Live on Steam Workshop (ID: ${pubInfo.workshopId || ''})">
                         ☁️ Uploaded
-                    </span>` : ''}
+                    </span>` : map.hasNativeNav ? `
+                    <span class="pill-nav pill-ready" title="Custom Navigation Mesh ready (.nav file on disk)">
+                        ● NavMesh Ready
+                    </span>` : map.hasBundledNav ? `
+                    <span class="pill-nav pill-bundled" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.3);" title="Official built-in NavMesh provided inside Workshop addon">
+                        ● Built-in NavMesh
+                    </span>` : `
+                    <span class="pill-nav none">
+                        ○ No NavMesh
+                    </span>`}
                 </div>
             </div>
             <div class="map-card-footer">
@@ -810,7 +816,7 @@ function renderMaps() {
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                     <span>Launch</span>
                 </button>
-                ${map.hasNav ? `
+                ${(map.hasNativeNav || isPublished) ? `
                 <button class="btn btn-secondary btn-icon btn-nav-cloud" 
                     title="${isPublished ? `NavMesh Uploaded to Steam Workshop! (${pubInfo.title || map.mapName}) - Click to manage or view on Workshop` : 'Publish NavMesh to Steam Workshop'}" 
                     data-action="publish-nav" 
@@ -1311,7 +1317,13 @@ async function openPublishNavModal(mapName) {
             iconPreview.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="%231e293b"/><text x="36" y="42" font-family="sans-serif" font-weight="bold" font-size="10" fill="%2338bdf8" text-anchor="middle">NAVMESH</text></svg>';
         }
 
-        if (!meta.navSize || meta.navSize === 0) {
+        if (meta.isBundled) {
+            statusAlert.style.display = 'block';
+            statusAlert.style.background = 'rgba(14, 165, 233, 0.15)';
+            statusAlert.style.color = '#38bdf8';
+            statusAlert.style.border = '1px solid rgba(14, 165, 233, 0.3)';
+            statusAlert.innerHTML = `ℹ️ This map includes an official built-in NavMesh (${formatBytes(meta.navSize)}). It has been extracted to garrysmod/maps so Nextbots and singleplayer work immediately!`;
+        } else if (!meta.navSize || meta.navSize === 0) {
             btnConfirm.disabled = true;
             statusAlert.style.display = 'block';
             statusAlert.style.background = 'rgba(239, 68, 68, 0.15)';

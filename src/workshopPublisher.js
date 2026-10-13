@@ -47,6 +47,7 @@ function listPublishedFiles(gmpublishExe) {
  */
 function prepareIcon(mapName, gmodInfo, stagingDir, nativeImage) {
     const iconDest = path.join(stagingDir, 'icon.jpg');
+    const defaultIconPath = path.join(__dirname, '..', 'data', 'default_navmesh_icon.jpg');
     
     // Potential thumbnail locations in order of preference
     const candidates = [
@@ -55,6 +56,8 @@ function prepareIcon(mapName, gmodInfo, stagingDir, nativeImage) {
         gmodInfo.mapsDir ? path.join(gmodInfo.mapsDir, `${mapName}.png`) : null,
         gmodInfo.mapsDir ? path.join(gmodInfo.mapsDir, `${mapName}.jpg`) : null,
         path.join(__dirname, '..', 'data', 'thumbnails', `${mapName.toLowerCase()}.png`),
+        path.join(__dirname, '..', 'data', 'thumbnails', `${mapName.toLowerCase()}.jpg`),
+        defaultIconPath
     ].filter(Boolean);
 
     for (const cand of candidates) {
@@ -69,7 +72,6 @@ function prepareIcon(mapName, gmodInfo, stagingDir, nativeImage) {
                         return iconDest;
                     }
                 } else {
-                    // Direct copy if already jpg
                     if (cand.toLowerCase().endsWith('.jpg')) {
                         fs.copyFileSync(cand, iconDest);
                         return iconDest;
@@ -79,38 +81,58 @@ function prepareIcon(mapName, gmodInfo, stagingDir, nativeImage) {
         }
     }
 
-    // Fallback: Generate an icon using nativeImage buffer if available
+    // 100% Reliable Fallback: Generate a high-contrast 512x512 bitmap badge
     if (nativeImage) {
         try {
-            // Generate a 512x512 dark cyan badge using SVG data URL
-            const svgText = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="50%" stop-color="#1e293b"/>
-      <stop offset="100%" stop-color="#0f172a"/>
-    </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#818cf8"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
-  <rect x="24" y="24" width="464" height="464" rx="28" fill="none" stroke="url(#accent)" stroke-width="6" opacity="0.8"/>
-  <circle cx="256" cy="180" r="70" fill="none" stroke="#38bdf8" stroke-width="8"/>
-  <polygon points="256,130 295,210 217,210" fill="#38bdf8"/>
-  <text x="256" y="310" font-family="Segoe UI, sans-serif" font-weight="900" font-size="34" fill="#f8fafc" text-anchor="middle">NAVMESH</text>
-  <text x="256" y="360" font-family="Segoe UI, sans-serif" font-weight="700" font-size="20" fill="#94a3b8" text-anchor="middle">${mapName.length > 25 ? mapName.substring(0, 22) + '...' : mapName}</text>
-  <rect x="156" y="400" width="200" height="34" rx="17" fill="#38bdf8" opacity="0.15"/>
-  <text x="256" y="424" font-family="Segoe UI, sans-serif" font-weight="800" font-size="14" fill="#38bdf8" text-anchor="middle">NEXTBOT READY</text>
-</svg>`;
-            const dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgText)}`;
-            const img = nativeImage.createFromDataURL(dataUrl);
-            if (!img.isEmpty()) {
-                const jpgBuf = img.resize({ width: 512, height: 512 }).toJPEG(90);
-                fs.writeFileSync(iconDest, jpgBuf);
-                return iconDest;
+            const width = 512;
+            const height = 512;
+            const buf = Buffer.alloc(width * height * 4);
+            const centerX = 256;
+            const centerY = 230;
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    const dx = x - centerX;
+                    const dy = y - centerY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    const bgGrad = Math.max(0, 1 - dist / 360);
+                    let b = Math.round(25 + bgGrad * 35);
+                    let g = Math.round(18 + bgGrad * 25);
+                    let r = Math.round(12 + bgGrad * 18);
+
+                    const isBorder = (x < 12 || x >= width - 12 || y < 12 || y >= height - 12);
+                    const isInnerBorder = ((x >= 20 && x <= 22) || (x >= width - 23 && x <= width - 21) ||
+                                           (y >= 20 && y <= 22) || (y >= height - 23 && y <= height - 21));
+
+                    if (isBorder) {
+                        b = 248; g = 189; r = 56;
+                    } else if (isInnerBorder) {
+                        b = 180; g = 120; r = 30;
+                    } else {
+                        if (Math.abs(dist - 60) < 2 || Math.abs(dist - 120) < 2 || Math.abs(dist - 180) < 2) {
+                            b = Math.min(255, b + 60); g = Math.min(255, g + 80); r = Math.min(255, r + 20);
+                        }
+                        if ((Math.abs(dx) < 2 && dist < 190) || (Math.abs(dy) < 2 && dist < 190)) {
+                            b = Math.min(255, b + 70); g = Math.min(255, g + 90); r = Math.min(255, r + 30);
+                        }
+                        if (Math.abs(dx) + Math.abs(dy) < 26) {
+                            b = 250; g = 200; r = 56;
+                        }
+                    }
+
+                    buf[idx] = b;
+                    buf[idx + 1] = g;
+                    buf[idx + 2] = r;
+                    buf[idx + 3] = 255;
+                }
             }
+
+            const img = nativeImage.createFromBitmap(buf, { width, height });
+            const jpgBuf = img.toJPEG(90);
+            fs.writeFileSync(iconDest, jpgBuf);
+            return iconDest;
         } catch (_) {}
     }
 
@@ -135,8 +157,25 @@ async function publishNavmeshToWorkshop(gmodInfo, { mapName, title, description,
         throw new Error(`gmpublish.exe not found at: ${gmpublishExe}`);
     }
 
-    // 1. Check if .nav file exists
-    const navPath = gmodInfo.mapsDir ? path.join(gmodInfo.mapsDir, `${mapName}.nav`) : null;
+    // 1. Check if .nav file exists, or auto-extract if bundled in workshop GMA
+    let navPath = gmodInfo.mapsDir ? path.join(gmodInfo.mapsDir, `${mapName}.nav`) : null;
+    if ((!navPath || !fs.existsSync(navPath)) && gmodInfo.mapsDir) {
+        try {
+            const { scanAllMaps } = require('./mapManager');
+            const { extractSingleFile } = require('./gmaParser');
+            const maps = await scanAllMaps(gmodInfo);
+            const targetMap = maps.find(m => m.mapName.toLowerCase() === mapName.toLowerCase());
+            if (targetMap && targetMap.source === 'workshop_gma' && targetMap.hasBundledNav) {
+                const internalNavPath = `maps/${mapName}.nav`;
+                const destNav = path.join(gmodInfo.mapsDir, `${mapName}.nav`);
+                extractSingleFile(targetMap.filePath, internalNavPath, destNav);
+                if (fs.existsSync(destNav)) {
+                    navPath = destNav;
+                }
+            }
+        } catch (_) {}
+    }
+
     if (!navPath || !fs.existsSync(navPath)) {
         throw new Error(`NavMesh file '${mapName}.nav' not found in garrysmod/maps.`);
     }

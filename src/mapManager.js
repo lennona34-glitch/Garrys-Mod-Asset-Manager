@@ -59,7 +59,9 @@ async function scanAllMaps(gmodInfo) {
 
                     // Check for nav mesh
                     const navPath = path.join(gmodInfo.mapsDir, `${mapName}.nav`);
-                    const hasNav = fs.existsSync(navPath);
+                    const hasNativeNav = fs.existsSync(navPath) && fs.statSync(navPath).size > 0;
+                    const hasBundledNav = false;
+                    const hasNav = hasNativeNav;
 
                     maps.push({
                         id: `loose_${mapName}`,
@@ -72,6 +74,8 @@ async function scanAllMaps(gmodInfo) {
                         classification,
                         thumbnail,
                         hasNav,
+                        hasNativeNav,
+                        hasBundledNav,
                         isEnabled: true,
                         parentAddon: null,
                         workshopId: null
@@ -140,8 +144,9 @@ async function scanAllMaps(gmodInfo) {
                 
                 // Check if navmesh exists inside GMA or natively on disk
                 const nativeNavPath = gmodInfo.mapsDir ? path.join(gmodInfo.mapsDir, `${mapName}.nav`) : null;
-                const hasNav = (nativeNavPath && fs.existsSync(nativeNavPath)) ||
-                               Boolean(header.navMeshes && header.navMeshes.includes(mapName));
+                const hasNativeNav = Boolean(nativeNavPath && fs.existsSync(nativeNavPath) && fs.statSync(nativeNavPath).size > 0);
+                const hasBundledNav = Boolean(header.navMeshes && header.navMeshes.includes(mapName));
+                const hasNav = hasNativeNav || hasBundledNav;
 
                 // Look for embedded map thumbnail inside GMA (e.g. maps/thumb/<map>.png, maps/<map>.png)
                 let internalThumbnail = null;
@@ -183,6 +188,8 @@ async function scanAllMaps(gmodInfo) {
                     classification,
                     thumbnail: internalThumbnail, // Uses internal screenshot if available
                     hasNav,
+                    hasNativeNav,
+                    hasBundledNav,
                     isEnabled: !gmaItem.isDisabled,
                     parentAddon: {
                         name: header.name,
@@ -206,7 +213,8 @@ async function scanAllMaps(gmodInfo) {
         // Double check native .nav file on disk
         if (gmodInfo.mapsDir) {
             const diskNav = path.join(gmodInfo.mapsDir, `${m.mapName}.nav`);
-            if (fs.existsSync(diskNav)) {
+            if (fs.existsSync(diskNav) && fs.statSync(diskNav).size > 0) {
+                m.hasNativeNav = true;
                 m.hasNav = true;
             }
         }
@@ -217,7 +225,9 @@ async function scanAllMaps(gmodInfo) {
             const existing = unifiedMaps.get(key);
             // Merge properties from GMA and loose files
             if (!existing.thumbnail && m.thumbnail) existing.thumbnail = m.thumbnail;
-            if (m.hasNav) existing.hasNav = true;
+            if (m.hasNativeNav) existing.hasNativeNav = true;
+            if (m.hasBundledNav) existing.hasBundledNav = true;
+            existing.hasNav = existing.hasNativeNav || existing.hasBundledNav;
             if (!existing.workshopId && m.workshopId) existing.workshopId = m.workshopId;
             if (!existing.parentAddon && m.parentAddon) existing.parentAddon = m.parentAddon;
             if (existing.source === 'loose' && m.source === 'workshop_gma') {

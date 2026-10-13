@@ -11,6 +11,7 @@ const { fetchPublishedFileDetails, searchWorkshop, openInSteamClient, openInBrow
 const { loadPresets, createPreset, deletePreset, applyPreset } = require('./src/presetsManager');
 const { runDiagnostics, fixAddonConflict, undoAddonConflict, getDismissedNavState, dismissNavMap, dismissAllNavMaps, restoreNavMaps } = require('./src/diagnosticsManager');
 const { getDefaultTitle, getDefaultDescription, publishNavmeshToWorkshop, getPublishedNavmeshes, recordPublishedNavmesh } = require('./src/workshopPublisher');
+const { extractSingleFile } = require('./src/gmaParser');
 
 let mainWindow = null;
 let currentGmodInfo = null;
@@ -343,16 +344,36 @@ ipcMain.handle('get-publish-navmesh-meta', async (event, mapName) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     const navPath = currentGmodInfo.mapsDir ? path.join(currentGmodInfo.mapsDir, `${mapName}.nav`) : null;
     let navSize = 0;
+    let isBundled = false;
+
     if (navPath && fs.existsSync(navPath)) {
         navSize = fs.statSync(navPath).size;
     }
 
+    // If loose nav is missing on disk, check if map has a bundled .nav in its workshop GMA
+    if ((!navSize || navSize === 0) && currentGmodInfo.mapsDir) {
+        try {
+            const allMaps = await scanAllMaps(currentGmodInfo);
+            const targetMap = allMaps.find(m => m.mapName.toLowerCase() === mapName.toLowerCase());
+            if (targetMap && targetMap.source === 'workshop_gma' && targetMap.hasBundledNav && navPath) {
+                const internalNavPath = `maps/${mapName}.nav`;
+                extractSingleFile(targetMap.filePath, internalNavPath, navPath);
+                if (fs.existsSync(navPath)) {
+                    navSize = fs.statSync(navPath).size;
+                    isBundled = true;
+                }
+            }
+        } catch (_) {}
+    }
+
     let thumbUrl = null;
+    const defaultIcon = path.join(__dirname, 'data', 'default_navmesh_icon.jpg');
     const thumbCandidates = [
         path.join(__dirname, 'data', 'thumbnails', `${mapName}.png`),
         path.join(__dirname, 'data', 'thumbnails', `${mapName}.jpg`),
         currentGmodInfo.mapsDir ? path.join(currentGmodInfo.mapsDir, `${mapName}.png`) : null,
         currentGmodInfo.mapsDir ? path.join(currentGmodInfo.mapsDir, `${mapName}.jpg`) : null,
+        defaultIcon
     ].filter(Boolean);
 
     for (const cand of thumbCandidates) {
@@ -367,7 +388,8 @@ ipcMain.handle('get-publish-navmesh-meta', async (event, mapName) => {
         title: getDefaultTitle(mapName),
         description: getDefaultDescription(mapName),
         navSize,
-        thumbUrl
+        thumbUrl,
+        isBundled
     };
 });
 
@@ -582,24 +604,34 @@ timer.Create("ControllerKeepalive_Heartbeat", 8, 0, function()
     local joy = GetConVar("joystick")
     if joy and joy:GetInt() == 0 then
         EnsureController()
+    else
+        RunConsoleCommand("joyadvancedupdate")
     end
 end)
 `;
         fs.writeFileSync(keepalivePath, keepaliveLua, 'utf8');
     } catch (_) {}
 
-    // 6. Update Steam Input Workshop Profile 923095811 and configset bindings
+    // 6. Update Steam Input Workshop Profiles and configsets
     try {
-        const legacyBinPath = 'C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\241100\\923095811\\838078270046996915_legacy.bin';
-        if (fs.existsSync(legacyBinPath)) {
-            let binContent = fs.readFileSync(legacyBinPath, 'utf8');
-            binContent = binContent.replace(/\"button_B\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/g, '"button_B"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
-            binContent = binContent.replace(/\"right_bumper\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/g, '"right_bumper"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
+        const profileFiles = [
+            'C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\241100\\923095811\\838078270046996915_legacy.bin',
+            'C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\241100\\2789459698\\1813269674151993644_legacy.bin'
+        ];
 
-            // Apply buttery smooth low-pass mouse smoothing, anti-deadzone, and progressive curve
-            const group7Block = `"group"
+        for (const pFile of profileFiles) {
+            if (fs.existsSync(pFile)) {
+                let binContent = fs.readFileSync(pFile, 'utf8');
+                binContent = binContent.replace(/\"button_B\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/gi, '"button_B"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
+                binContent = binContent.replace(/\"right_bumper\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/gi, '"right_bumper"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
+
+                // Update right stick mouse settings (group 7 or 9)
+                const groupMatch = binContent.match(/"group"\s*\{\s*"id"\s*"(7|9)"[\s\S]*?\n\t\}/);
+                if (groupMatch) {
+                    const groupId = groupMatch[1];
+                    const groupBlock = `"group"
 	{
-		"id"		"7"
+		"id"		"${groupId}"
 		"mode"		"joystick_mouse"
 		"inputs"
 		{
@@ -633,33 +665,60 @@ end)
 			"custom_curve_exponent"		"${steamCurveExponent}"
 		}
 	}`;
-            binContent = binContent.replace(/"group"\s*\{\s*"id"\s*"7"[\s\S]*?\n\t\}/, group7Block);
-            fs.writeFileSync(legacyBinPath, binContent, 'utf8');
+                    binContent = binContent.replace(/"group"\s*\{\s*"id"\s*"(7|9)"[\s\S]*?\n\t\}/, groupBlock);
+                }
+                fs.writeFileSync(pFile, binContent, 'utf8');
+            }
         }
 
-        // Ensure all Steam Controller ConfigSet files link AppID 4000 to workshop 923095811
+        // 4000-x86-64 controller config
+        const x64Cfg = 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Steam Controller Configs\\459479298\\config\\4000-x86-64\\controller_xbox360.vdf';
+        if (fs.existsSync(x64Cfg)) {
+            try {
+                let content = fs.readFileSync(x64Cfg, 'utf8');
+                content = content.replace(/\"button_b\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/gi, '"button_b"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
+                content = content.replace(/\"right_bumper\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/gi, '"right_bumper"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
+                content = content.replace(/"progenitor"\s+"[^"]*"/, '"progenitor"\t\t"workshop://923095811"');
+                fs.writeFileSync(x64Cfg, content, 'utf8');
+            } catch (_) {}
+        }
+
+        // Ensure ALL Steam Controller ConfigSet files link AppID 4000 and 4000-x86-64 to workshop 923095811
         const configDirs = [
             'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Steam Controller Configs\\865848147\\config',
             'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Steam Controller Configs\\459479298\\config'
         ];
-        const targetFiles = [
-            'configset_3537-1040-339bcb53.vdf',
-            'configset_3537-1040-339bcb53g.vdf',
-            'configset_controller_xbox360.vdf',
-            'configset_controller_xboxone.vdf',
-            'configset_controller_generic.vdf'
-        ];
         for (const dir of configDirs) {
             if (!fs.existsSync(dir)) continue;
-            for (const f of targetFiles) {
+            const files = fs.readdirSync(dir).filter(f => f.startsWith('configset_') && f.endsWith('.vdf'));
+            for (const f of files) {
                 const cfgPath = path.join(dir, f);
                 let content = fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf8') : '"controller_config"\n{\n}\n';
+                let modified = false;
+
+                if (content.includes('2789459698')) {
+                    content = content.replace(/\"2789459698\"/g, '"923095811"');
+                    modified = true;
+                }
+
                 if (!content.includes('"4000"')) {
                     const lastBrace = content.lastIndexOf('}');
                     if (lastBrace !== -1) {
                         content = content.slice(0, lastBrace) + '\t"4000"\n\t{\n\t\t"workshop"\t\t"923095811"\n\t}\n' + content.slice(lastBrace);
-                        fs.writeFileSync(cfgPath, content, 'utf8');
+                        modified = true;
                     }
+                }
+
+                if (!content.includes('"4000-x86-64"')) {
+                    const lastBrace = content.lastIndexOf('}');
+                    if (lastBrace !== -1) {
+                        content = content.slice(0, lastBrace) + '\t"4000-x86-64"\n\t{\n\t\t"workshop"\t\t"923095811"\n\t}\n' + content.slice(lastBrace);
+                        modified = true;
+                    }
+                }
+
+                if (modified) {
+                    fs.writeFileSync(cfgPath, content, 'utf8');
                 }
             }
         }
