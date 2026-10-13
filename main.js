@@ -458,11 +458,13 @@ joy_advanced "1"
 joy_name "Xbox360 controller"
 
 // Axis Mapping (Standard XInput / DirectInput mapping)
+// NOTE: joy_advaxisr and joy_advaxisu are set to 0 so native joystick look does NOT
+// fight Steam Input mouse emulation, eliminating aim jitter/stutter.
 joy_advaxisx "3"
 joy_advaxisy "1"
 joy_advaxisz "0"
-joy_advaxisr "2"
-joy_advaxisu "4"
+joy_advaxisr "0"
+joy_advaxisu "0"
 joy_advaxisv "0"
 joy_movement_stick "0"
 joy_movement_stick_default "0"
@@ -490,7 +492,13 @@ joy_autoaimdampenrange "0.85"
 sensitivity "${mouseSens}"
 m_customaccel "0"
 m_rawinput "1"
-m_filter "1"
+m_filter "0"
+
+// ADS / Iron Sights Hold-To-Aim ConVars (Prevents tap-to-aim toggle)
+arc9_toggleads "0"
+cl_tfa_ironsights_toggle "0"
+arccw_toggleads "0"
+tacrp_toggleaim "0"
 
 joyadvancedupdate
 
@@ -625,6 +633,90 @@ end)
                 binContent = binContent.replace(/\"button_B\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/gi, '"button_B"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
                 binContent = binContent.replace(/\"right_bumper\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/gi, '"right_bumper"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
 
+                // Left Trigger (Group 4) - Hold to Aim Down Sights (ADS)
+                const group4Block = `"group"
+	{
+		"id"\t\t"4"
+		"mode"\t\t"trigger"
+		"inputs"
+		{
+			"edge"
+			{
+				"activators"
+				{
+					"Soft_Press"
+					{
+						"bindings"
+						{
+							"binding"\t\t"mouse_button RIGHT, Hold to Aim Down Sights"
+						}
+					}
+				}
+			}
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"\t\t"mouse_button RIGHT, Hold to Aim Down Sights"
+						}
+					}
+				}
+			}
+		}
+		"settings"
+		{
+			"output_trigger"\t\t"1"
+			"edge_binding_trigger_point"\t\t"1000"
+		}
+	}`;
+                binContent = binContent.replace(/"group"\s*\{\s*"id"\s*"4"[\s\S]*?\n\t\}/, group4Block);
+
+                // Right Trigger (Group 5) - Primary Attack / Fire
+                const group5Block = `"group"
+	{
+		"id"\t\t"5"
+		"mode"\t\t"trigger"
+		"inputs"
+		{
+			"edge"
+			{
+				"activators"
+				{
+					"Soft_Press"
+					{
+						"bindings"
+						{
+							"binding"\t\t"mouse_button LEFT, Primary Attack"
+						}
+					}
+				}
+			}
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"\t\t"mouse_button LEFT, Primary Attack"
+						}
+					}
+				}
+			}
+		}
+		"settings"
+		{
+			"output_trigger"\t\t"2"
+			"edge_binding_trigger_point"\t\t"1000"
+		}
+	}`;
+                binContent = binContent.replace(/"group"\s*\{\s*"id"\s*"5"[\s\S]*?\n\t\}/, group5Block);
+
                 // Update right stick mouse settings (group 7 or 9)
                 const groupMatch = binContent.match(/"group"\s*\{\s*"id"\s*"(7|9)"[\s\S]*?\n\t\}/);
                 if (groupMatch) {
@@ -660,8 +752,8 @@ end)
 			"sensitivity"		"${steamMouseSens}"
 			"sensitivity_vert_scale"		"85"
 			"mouse_smoothing"		"${steamSmoothingAmount}"
-			"deadzone"		"2000"
-			"anti_deadzone"		"2000"
+			"deadzone"		"1200"
+			"anti_deadzone"		"0"
 			"custom_curve_exponent"		"${steamCurveExponent}"
 		}
 	}`;
