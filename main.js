@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { detectGmodPaths, getAllSubscribedWorkshopIds } = require('./src/steamDetector');
-const { scanAllMaps, launchMap, extractMapToNative, injectNavmeshAutopilot } = require('./src/mapManager');
+const { scanAllMaps, launchMap, connectToServer, getLocalNetworkInfo, scanLanGames, extractMapToNative, injectNavmeshAutopilot } = require('./src/mapManager');
 const { scanAllAddons, toggleAddonState, inspectGma, unpackAddon, packAddonFolder, deleteAddon } = require('./src/addonManager');
 const { analyzeStorage, cleanTarget } = require('./src/storageCleaner');
 const { fetchPublishedFileDetails, searchWorkshop, openInSteamClient, openInBrowser, openSteamWorkshopHub, openSteamUrl } = require('./src/workshopService');
@@ -110,6 +110,19 @@ ipcMain.handle('scan-maps', async () => {
 ipcMain.handle('launch-map', async (event, { mapName, options }) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     return await launchMap(currentGmodInfo, mapName, options);
+});
+
+ipcMain.handle('connect-to-server', async (event, payload) => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return await connectToServer(currentGmodInfo, payload);
+});
+
+ipcMain.handle('get-local-network-info', async () => {
+    return getLocalNetworkInfo();
+});
+
+ipcMain.handle('scan-lan-games', async () => {
+    return await scanLanGames();
 });
 
 ipcMain.handle('extract-map', async (event, { gmaPath, internalMapPath }) => {

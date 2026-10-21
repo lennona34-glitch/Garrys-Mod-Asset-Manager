@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const dgram = require('dgram');
 const { spawn, exec } = require('child_process');
 const { parseGmaHeader, extractSingleFile } = require('./gmaParser');
 
@@ -317,7 +319,7 @@ async function findAndExtractMapIfNeeded(gmodInfo, mapName) {
 }
 
 /**
- * Launch Garry's Mod directly into a specific map
+ * Launch Garry's Mod directly into a specific map (Singleplayer, Local LAN Server, or Steam Friends P2P)
  */
 async function launchMap(gmodInfo, mapName, options = {}) {
     const {
@@ -328,7 +330,11 @@ async function launchMap(gmodInfo, mapName, options = {}) {
         width = null,
         height = null,
         gamemode = 'sandbox',
-        extraArgs = ''
+        extraArgs = '',
+        hostMode = 'singleplayer', // 'singleplayer' | 'lan' | 'p2p'
+        maxPlayers = 8,
+        serverName = "Garry's Mod Private Server",
+        serverPassword = ''
     } = options;
 
     // Auto-extract map from Workshop GMA if not yet present in garrysmod/maps
@@ -350,6 +356,21 @@ async function launchMap(gmodInfo, mapName, options = {}) {
         if (width && height) args.push('-w', String(width), '-h', String(height));
     }
     if (gamemode) args.push('+gamemode', gamemode);
+
+    // Multiplayer Host Mode configuration (must precede +map so Source allocates multiplayer slots)
+    const playersCount = Math.max(2, Math.min(32, parseInt(maxPlayers, 10) || 8));
+    if (hostMode === 'lan') {
+        args.push('+sv_lan', '1', '+maxplayers', String(playersCount));
+        if (serverName) args.push('+hostname', serverName);
+        if (serverPassword) args.push('+sv_password', serverPassword);
+    } else if (hostMode === 'p2p') {
+        args.push('+sv_lan', '0', '+p2p_enabled', '1', '+p2p_friendsonly', '1', '+maxplayers', String(playersCount));
+        if (serverName) args.push('+hostname', serverName);
+        if (serverPassword) args.push('+sv_password', serverPassword);
+    } else {
+        args.push('+maxplayers', '1');
+    }
+
     args.push('+map', mapName);
     // Guarantee wireless controller is initialized on boot with modern layout
     args.push('+joystick', '1', '+joy_advanced', '1', '+exec', '360controller');
@@ -358,8 +379,13 @@ async function launchMap(gmodInfo, mapName, options = {}) {
         args.push(...extraArgs.trim().split(/\s+/));
     }
 
-    // Primary: Launch via steam.exe -applaunch 4000 so Steam tracks process lifecycle,
-    // keeping Steam Input and wireless controller hooks anchored across map changes and gamemode transitions
+    return spawnGmodWithArgs(gmodInfo, args);
+}
+
+/**
+ * Shared helper to spawn Garry's Mod via steam.exe -applaunch 4000 or direct exe
+ */
+function spawnGmodWithArgs(gmodInfo, args) {
     const steamExePath = gmodInfo.steamPath ? path.join(gmodInfo.steamPath, 'steam.exe') : 'C:\\Program Files (x86)\\Steam\\steam.exe';
     if (fs.existsSync(steamExePath)) {
         try {
@@ -375,7 +401,6 @@ async function launchMap(gmodInfo, mapName, options = {}) {
         }
     }
 
-    // Secondary fallback: Direct executable spawn
     if (gmodInfo.gmodExe && fs.existsSync(gmodInfo.gmodExe)) {
         const proc = spawn(gmodInfo.gmodExe, args, {
             cwd: path.dirname(gmodInfo.gmodExe),
@@ -386,10 +411,177 @@ async function launchMap(gmodInfo, mapName, options = {}) {
         return { success: true, method: 'direct_executable', executable: gmodInfo.gmodExe, args };
     }
 
-    // Tertiary fallback: Steam URL protocol
     const steamUrl = `steam://run/4000//${encodeURIComponent(args.join(' '))}`;
     exec(`start "" "${steamUrl}"`);
     return { success: true, method: 'steam_protocol', url: steamUrl, args };
+}
+
+/**
+ * Connect directly to a Local LAN or Private Server IP:Port
+ */
+async function connectToServer(gmodInfo, { address, password = '', options = {} }) {
+    const cleanAddr = String(address || '').trim().replace(/^connect\s+/i, '');
+    if (!cleanAddr) {
+        throw new Error('Please enter a valid server IP address (e.g. 192.168.1.50:27015).');
+    }
+
+    const {
+        novid = true,
+        windowed = false,
+        width = null,
+        height = null
+    } = options;
+
+    const args = ['-condebug'];
+    if (novid) args.push('-novid');
+    if (windowed) {
+        args.push('-windowed', '-noborder');
+        if (width && height) args.push('-w', String(width), '-h', String(height));
+    } else {
+        args.push('-fullscreen');
+        if (width && height) args.push('-w', String(width), '-h', String(height));
+    }
+
+    args.push('+joystick', '1', '+joy_advanced', '1', '+exec', '360controller');
+    if (password && password.trim()) {
+        args.push('+password', password.trim());
+    }
+    args.push('+connect', cleanAddr);
+
+    return spawnGmodWithArgs(gmodInfo, args);
+}
+
+/**
+ * Returns local IPv4 network addresses of this PC so players on the same Wi-Fi/LAN know where to connect
+ */
+function getLocalNetworkInfo() {
+    const nets = os.networkInterfaces();
+    const addresses = [];
+    for (const [name, list] of Object.entries(nets)) {
+        if (!Array.isArray(list)) continue;
+        for (const iface of list) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                const parts = iface.address.split('.');
+                const broadcast = parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.255` : '255.255.255.255';
+                addresses.push({
+                    interfaceName: name,
+                    ip: iface.address,
+                    netmask: iface.netmask,
+                    broadcast,
+                    defaultPort: 27015,
+                    connectCommand: `connect ${iface.address}:27015`
+                });
+            }
+        }
+    }
+    return {
+        primaryIp: addresses.length > 0 ? addresses[0].ip : '127.0.0.1',
+        defaultPort: 27015,
+        addresses
+    };
+}
+
+/**
+ * Broadcasts a Valve Source Engine A2S_INFO UDP query across the local network (ports 27015-27020)
+ * to automatically discover any active Garry's Mod LAN servers.
+ */
+function scanLanGames(timeoutMs = 1300) {
+    return new Promise((resolve) => {
+        const discovered = new Map();
+        const socket = dgram.createSocket('udp4');
+
+        // Official Valve Source Engine A2S_INFO request packet
+        const queryPayload = Buffer.from([
+            0xFF, 0xFF, 0xFF, 0xFF,
+            0x54, // 'T'
+            ...Buffer.from('Source Engine Query\0', 'ascii')
+        ]);
+
+        const readNullString = (buf, offsetObj) => {
+            const end = buf.indexOf(0, offsetObj.pos);
+            if (end === -1) return '';
+            const s = buf.toString('utf8', offsetObj.pos, end);
+            offsetObj.pos = end + 1;
+            return s;
+        };
+
+        socket.on('message', (msg, rinfo) => {
+            try {
+                if (msg.length < 6 || msg.readInt32LE(0) !== -1) return;
+                const headerByte = msg[4];
+
+                // If server responds with an A2S_INFO challenge (0x41 'A'), echo the 4-byte challenge back
+                if (headerByte === 0x41 && msg.length >= 9) {
+                    const challenge = msg.subarray(5, 9);
+                    const challengeReply = Buffer.concat([queryPayload, challenge]);
+                    socket.send(challengeReply, rinfo.port, rinfo.address);
+                    return;
+                }
+
+                // Standard Source Engine A2S_INFO response (0x49 'I')
+                if (headerByte === 0x49) {
+                    const ptr = { pos: 6 }; // Skip -1 (4 bytes), 'I' (1 byte), protocol (1 byte)
+                    const serverName = readNullString(msg, ptr);
+                    const mapName = readNullString(msg, ptr);
+                    const folder = readNullString(msg, ptr);
+                    const gamemode = readNullString(msg, ptr);
+                    if (ptr.pos + 7 > msg.length) return;
+
+                    const appId = msg.readUInt16LE(ptr.pos);
+                    ptr.pos += 2;
+                    const players = msg.readUInt8(ptr.pos++);
+                    const maxPlayers = msg.readUInt8(ptr.pos++);
+                    const bots = msg.readUInt8(ptr.pos++);
+                    const serverType = String.fromCharCode(msg.readUInt8(ptr.pos++));
+                    const environment = String.fromCharCode(msg.readUInt8(ptr.pos++));
+                    const visibility = msg.readUInt8(ptr.pos++); // 0 = public, 1 = password
+
+                    const key = `${rinfo.address}:${rinfo.port}`;
+                    discovered.set(key, {
+                        address: key,
+                        ip: rinfo.address,
+                        port: rinfo.port,
+                        serverName: serverName || 'Local GMod Server',
+                        mapName: mapName || 'unknown',
+                        folder,
+                        gamemode: gamemode || 'Sandbox',
+                        appId,
+                        players,
+                        maxPlayers,
+                        bots,
+                        hasPassword: visibility === 1,
+                        serverType
+                    });
+                }
+            } catch (_) {}
+        });
+
+        socket.on('error', () => {});
+
+        socket.bind(0, () => {
+            try {
+                socket.setBroadcast(true);
+                const netInfo = getLocalNetworkInfo();
+                const broadcastTargets = new Set(['255.255.255.255', '127.0.0.1']);
+                for (const addr of netInfo.addresses) {
+                    if (addr.broadcast) broadcastTargets.add(addr.broadcast);
+                    if (addr.ip) broadcastTargets.add(addr.ip);
+                }
+
+                const ports = [27015, 27016, 27017, 27018, 27019, 27020];
+                for (const host of broadcastTargets) {
+                    for (const port of ports) {
+                        socket.send(queryPayload, port, host);
+                    }
+                }
+            } catch (_) {}
+        });
+
+        setTimeout(() => {
+            try { socket.close(); } catch (_) {}
+            resolve(Array.from(discovered.values()));
+        }, timeoutMs);
+    });
 }
 
 /**
@@ -485,5 +677,8 @@ module.exports = {
     extractMapToNative,
     findAndExtractMapIfNeeded,
     launchMap,
+    connectToServer,
+    getLocalNetworkInfo,
+    scanLanGames,
     injectNavmeshAutopilot
 };

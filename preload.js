@@ -7,9 +7,12 @@ contextBridge.exposeInMainWorld('api', {
     toggleFullScreen: () => ipcRenderer.invoke('toggle-fullscreen'),
     isFullScreen: () => ipcRenderer.invoke('is-fullscreen'),
     
-    // Maps
+    // Maps & Private / Local Multiplayer
     scanMaps: () => ipcRenderer.invoke('scan-maps'),
     launchMap: (mapName, options) => ipcRenderer.invoke('launch-map', { mapName, options }),
+    connectToServer: (payload) => ipcRenderer.invoke('connect-to-server', payload),
+    getLocalNetworkInfo: () => ipcRenderer.invoke('get-local-network-info'),
+    scanLanGames: () => ipcRenderer.invoke('scan-lan-games'),
     extractMap: (gmaPath, internalMapPath) => ipcRenderer.invoke('extract-map', { gmaPath, internalMapPath }),
     
     // Addons

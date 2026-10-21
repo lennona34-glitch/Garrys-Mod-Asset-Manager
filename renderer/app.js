@@ -3103,3 +3103,278 @@ document.addEventListener('DOMContentLoaded', () => {
         initStudioIfNeeded();
     }, 600);
 });
+
+
+// =========================================================================
+// 🌐 HOST & JOIN PRIVATE / LOCAL MULTIPLAYER GAME LOGIC
+// =========================================================================
+
+// Override launchSelectedMap to support Quick Launch Mode (Singleplayer, Local LAN, Steam P2P)
+// as well as custom host options from the Private Game Modal.
+function launchSelectedMap(mapName, customHostOpts = null) {
+    const novid = document.getElementById('optNoVid')?.checked ?? true;
+    const noworkshop = document.getElementById('optNoWorkshop')?.checked ?? false;
+    const windowed = document.getElementById('optWindowed')?.checked ?? false;
+    const gamemode = document.getElementById('optDefaultGamemode')?.value || 'sandbox';
+    const extraArgs = document.getElementById('optExtraArgs')?.value || '';
+    const resEl = document.getElementById('optResolution');
+    const resVal = resEl ? resEl.value : 'native';
+
+    if (resEl) {
+        try { localStorage.setItem('gmod_preferred_res', resVal); } catch (_) {}
+    }
+
+    let width = null;
+    let height = null;
+    if (resVal === '3840x2160') { width = 3840; height = 2160; }
+    else if (resVal === '2560x1440') { width = 2560; height = 1440; }
+    else if (resVal === '1920x1080') { width = 1920; height = 1080; }
+
+    const quickModeEl = document.getElementById('selQuickHostMode');
+    const quickMode = quickModeEl ? quickModeEl.value : 'singleplayer';
+
+    const hostMode = (customHostOpts && customHostOpts.hostMode) ? customHostOpts.hostMode : quickMode;
+    const maxPlayers = (customHostOpts && customHostOpts.maxPlayers)
+        ? parseInt(customHostOpts.maxPlayers, 10)
+        : (hostMode === 'singleplayer' ? 1 : 8);
+    const serverName = (customHostOpts && customHostOpts.serverName)
+        ? customHostOpts.serverName
+        : 'Private GMod Party';
+    const serverPassword = (customHostOpts && customHostOpts.serverPassword)
+        ? customHostOpts.serverPassword
+        : '';
+
+    const resLabel = (resVal === 'native' || !width) ? 'Native / DLDSR Fullscreen' : `${width}x${height}`;
+    let modeLabel = 'Solo Singleplayer';
+    if (hostMode === 'lan') modeLabel = `Local LAN Server (${maxPlayers} Players)`;
+    else if (hostMode === 'p2p') modeLabel = `Steam Friends P2P (${maxPlayers} Players)`;
+
+    showToast(`Launching ${mapName} — ${modeLabel} (${resLabel})...`, 'info');
+    window.api.launchMap(mapName, {
+        novid,
+        noworkshop,
+        fullscreen: !windowed,
+        windowed,
+        width,
+        height,
+        gamemode,
+        extraArgs,
+        hostMode,
+        maxPlayers,
+        serverName,
+        serverPassword
+    })
+        .then(() => {
+            if (hostMode === 'lan') {
+                showToast(`🏠 Local LAN Server started on ${mapName}! Other PCs on your Wi-Fi can scan or type connect <your-ip>:27015`, 'success');
+            } else if (hostMode === 'p2p') {
+                showToast(`🤝 Private Steam P2P Server started on ${mapName}! Friends can right-click your name in Steam -> Join Game.`, 'success');
+            } else {
+                showToast(`Garry's Mod launched with map: ${mapName}!`, 'success');
+            }
+        })
+        .catch(err => showToast(`Launch failed: ${err.message}`, 'error'));
+}
+
+let cachedLocalLanIp = '127.0.0.1';
+
+async function refreshPrivateGameModalInfo() {
+    // 1. Populate Map Dropdown from state.maps
+    const selMap = document.getElementById('selModalHostMap');
+    if (selMap && Array.isArray(state.maps) && state.maps.length > 0) {
+        const currentVal = selMap.value || 'gm_construct';
+        const sortedMaps = [...state.maps].sort((a, b) => a.mapName.localeCompare(b.mapName));
+        selMap.innerHTML = sortedMaps.map(m => {
+            const label = m.addonTitle ? `${m.mapName} (${m.addonTitle})` : m.mapName;
+            return `<option value="${m.mapName}">${label}</option>`;
+        }).join('');
+        if (sortedMaps.some(m => m.mapName === currentVal)) {
+            selMap.value = currentVal;
+        } else if (sortedMaps.some(m => m.mapName === 'gm_construct')) {
+            selMap.value = 'gm_construct';
+        }
+    }
+
+    // 2. Fetch Local Network IP
+    const lblIp = document.getElementById('lblMyLocalLanIp');
+    if (window.api.getLocalNetworkInfo) {
+        try {
+            const netInfo = await window.api.getLocalNetworkInfo();
+            if (netInfo && netInfo.ip) {
+                cachedLocalLanIp = netInfo.ip;
+                if (lblIp) {
+                    lblIp.textContent = `${netInfo.ip}:27015 (${netInfo.interfaceName || 'LAN'})`;
+                }
+            }
+        } catch (err) {
+            if (lblIp) lblIp.textContent = '127.0.0.1:27015';
+        }
+    }
+}
+
+async function runLanServerScan() {
+    const box = document.getElementById('lanServersDiscoveryBox');
+    const btn = document.getElementById('btnScanLanServers');
+    if (!box) return;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '📡 Scanning...';
+    }
+    box.innerHTML = `
+        <div style="text-align: center; color: #38bdf8; font-size: 12px; padding: 24px 8px;">
+            📡 Broadcasting UDP A2S_INFO discovery across local Wi-Fi / Ethernet (ports 27015–27020)...
+        </div>
+    `;
+
+    try {
+        const servers = await window.api.scanLanGames();
+        if (!servers || servers.length === 0) {
+            box.innerHTML = `
+                <div style="text-align: center; color: #94a3b8; font-size: 11.5px; padding: 18px 10px; line-height: 1.5;">
+                    No running Garry's Mod LAN servers responded on ports 27015–27020.<br>
+                    <span style="font-size: 10.5px; color: #64748b;">Tip: Make sure the host PC has finished loading into the map with <strong>Local LAN</strong> mode enabled, or enter their IP address below.</span>
+                </div>
+            `;
+        } else {
+            box.innerHTML = servers.map(srv => `
+                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 7px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                    <div style="min-width: 0;">
+                        <div style="font-weight: 700; font-size: 12.5px; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            ${srv.passwordProtected ? '🔒 ' : '🟢 '}${srv.name || 'GMod LAN Server'}
+                        </div>
+                        <div style="font-size: 11px; color: #94a3b8; font-family: var(--font-mono);">
+                            🗺️ ${srv.map} • 👥 ${srv.players}/${srv.maxPlayers} • ${srv.address}
+                        </div>
+                    </div>
+                    <button class="btn btn-primary btn-xs btn-join-discovered-lan" data-address="${srv.address}" style="white-space: nowrap; flex-shrink: 0; background: #10b981; border: none;">
+                        ⚡ Join
+                    </button>
+                </div>
+            `).join('');
+
+            box.querySelectorAll('.btn-join-discovered-lan').forEach(joinBtn => {
+                joinBtn.addEventListener('click', () => {
+                    const addr = joinBtn.getAttribute('data-address');
+                    const inpAddr = document.getElementById('inpDirectConnectAddress');
+                    if (inpAddr) inpAddr.value = addr;
+                    triggerDirectConnect(addr);
+                });
+            });
+        }
+    } catch (err) {
+        box.innerHTML = `<div style="text-align: center; color: #f87171; font-size: 11.5px; padding: 20px;">Scan failed: ${err.message}</div>`;
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '📡 Scan Wi-Fi / LAN';
+        }
+    }
+}
+
+function triggerDirectConnect(addressOverride = null) {
+    const rawAddr = addressOverride || document.getElementById('inpDirectConnectAddress')?.value || '';
+    const password = document.getElementById('inpDirectConnectPassword')?.value || '';
+    const cleanAddr = rawAddr.replace(/^connect\s+/i, '').trim();
+
+    if (!cleanAddr) {
+        return showToast('Please enter a local IP address (e.g. 192.168.1.42:27015) or scan your LAN first.', 'error');
+    }
+
+    const novid = document.getElementById('optNoVid')?.checked ?? true;
+    const windowed = document.getElementById('optWindowed')?.checked ?? false;
+    const extraArgs = document.getElementById('optExtraArgs')?.value || '';
+    const resEl = document.getElementById('optResolution');
+    const resVal = resEl ? resEl.value : 'native';
+
+    let width = null;
+    let height = null;
+    if (resVal === '3840x2160') { width = 3840; height = 2160; }
+    else if (resVal === '2560x1440') { width = 2560; height = 1440; }
+    else if (resVal === '1920x1080') { width = 1920; height = 1080; }
+
+    showToast(`Launching Garry's Mod & connecting to ${cleanAddr}...`, 'info');
+    window.api.connectToServer(cleanAddr, {
+        password,
+        novid,
+        fullscreen: !windowed,
+        windowed,
+        width,
+        height,
+        extraArgs
+    })
+        .then(() => {
+            showToast(`Connecting to server ${cleanAddr}!`, 'success');
+            document.getElementById('privateGameModal')?.classList.remove('active');
+        })
+        .catch(err => showToast(`Connection launch failed: ${err.message}`, 'error'));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('privateGameModal');
+    const btnOpen = document.getElementById('btnOpenPrivateGameModal');
+    const btnClose = document.getElementById('btnClosePrivateGameModal');
+
+    if (btnOpen && modal) {
+        btnOpen.addEventListener('click', async () => {
+            modal.classList.add('active');
+            await refreshPrivateGameModalInfo();
+            runLanServerScan();
+        });
+    }
+
+    if (btnClose && modal) {
+        btnClose.addEventListener('click', () => {
+            modal.classList.remove('active');
+        });
+    }
+
+    const btnCopyIp = document.getElementById('btnCopyMyConnectCmd');
+    if (btnCopyIp) {
+        btnCopyIp.addEventListener('click', () => {
+            const pw = document.getElementById('inpModalHostPassword')?.value?.trim();
+            const cmd = pw
+                ? `password "${pw}"; connect ${cachedLocalLanIp}:27015`
+                : `connect ${cachedLocalLanIp}:27015`;
+            navigator.clipboard.writeText(cmd);
+            showToast(`Copied "${cmd}" to clipboard! Send this to anyone on your network.`, 'success');
+        });
+    }
+
+    const btnHost = document.getElementById('btnConfirmHostPrivateGame');
+    if (btnHost) {
+        btnHost.addEventListener('click', () => {
+            const mapName = document.getElementById('selModalHostMap')?.value || 'gm_construct';
+            const hostMode = document.getElementById('selModalHostType')?.value || 'lan';
+            const maxPlayers = parseInt(document.getElementById('selModalMaxPlayers')?.value || '8', 10);
+            const serverName = document.getElementById('inpModalServerName')?.value || 'Private GMod Party';
+            const serverPassword = document.getElementById('inpModalHostPassword')?.value || '';
+
+            // Sync quick selector on Maps Hub too
+            const quickSel = document.getElementById('selQuickHostMode');
+            if (quickSel) quickSel.value = hostMode;
+
+            modal?.classList.remove('active');
+            launchSelectedMap(mapName, {
+                hostMode,
+                maxPlayers,
+                serverName,
+                serverPassword
+            });
+        });
+    }
+
+    const btnScan = document.getElementById('btnScanLanServers');
+    if (btnScan) {
+        btnScan.addEventListener('click', () => {
+            runLanServerScan();
+        });
+    }
+
+    const btnConnect = document.getElementById('btnConfirmDirectConnect');
+    if (btnConnect) {
+        btnConnect.addEventListener('click', () => {
+            triggerDirectConnect();
+        });
+    }
+});
