@@ -613,7 +613,11 @@ bind "b" "+duck"`;
 local function EnsureController()
     RunConsoleCommand("joystick", "1")
     RunConsoleCommand("joy_advanced", "1")
-    RunConsoleCommand("exec", "joystick.cfg")
+    RunConsoleCommand("joy_advaxisx", "3")
+    RunConsoleCommand("joy_advaxisy", "1")
+    RunConsoleCommand("joy_advaxisr", "0")
+    RunConsoleCommand("joy_advaxisu", "0")
+    RunConsoleCommand("joyadvancedupdate")
 end
 hook.Add("InitPostEntity", "ControllerKeepalive_InitPostEntity", function()
     timer.Simple(0.5, EnsureController)
@@ -626,8 +630,6 @@ timer.Create("ControllerKeepalive_Heartbeat", 8, 0, function()
     local joy = GetConVar("joystick")
     if joy and joy:GetInt() == 0 then
         EnsureController()
-    else
-        RunConsoleCommand("joyadvancedupdate")
     end
 end)
 `;

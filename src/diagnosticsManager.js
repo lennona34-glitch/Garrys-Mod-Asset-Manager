@@ -381,6 +381,20 @@ async function runDiagnostics(gmodInfo) {
         });
     }
 
+    // Check GCAL (Garry's Mod Compliant Armature Layer) vs. VManip Patch conflict
+    const hasGcal = installedWorkshopIds.has('3727245204');
+    const hasVmanip = installedWorkshopIds.has('3262499127') || installedWorkshopIds.has('2155366756') || installedWorkshopIds.has('3080114310');
+    if (hasGcal && hasVmanip) {
+        duplicatePacks.push({
+            key: 'gcal_vmanip',
+            title: 'GCAL vs. VManip Armature & Model Crash Conflict',
+            detail: 'You have both "Garry\'s Mod Compliant Armature Layer (GCAL)" (3727245204) and "Chen\'s VManip Patch" (3262499127) enabled. Both overwrite global VManip/VMLegs hooks and bundle 24+ conflicting c_vmanip.mdl vertex files, causing fullscreen conflict popups and C++ bone/model crashes on spawn.',
+            fix: 'Unmount GCAL (3727245204) and keep Chen\'s VManip Patch active for your MW Base & ARC9 weapons.',
+            redundantCount: 1,
+            fixButtonText: 'Fix Now (Unmount GCAL 3727245204)'
+        });
+    }
+
     if (duplicatePacks.length > 0) {
         issues.push({
             type: 'duplicate_addon_conflict',
@@ -505,6 +519,21 @@ async function runDiagnostics(gmodInfo) {
         });
     }
 
+    // Check if GCAL vs VManip conflict was resolved
+    const gcalDisabled = noMountSet.has('3727245204') || (() => {
+        const d = path.join(gmodInfo.workshopDir, '3727245204');
+        if (!fs.existsSync(d)) return false;
+        return fs.readdirSync(d).some(f => f.toLowerCase().endsWith('.disabled'));
+    })();
+    if (installedWorkshopIds.has('3262499127') && gcalDisabled) {
+        resolved.push({
+            key: 'gcal_vmanip',
+            title: 'GCAL vs. VManip Armature Crash Conflict: Resolved',
+            detail: 'GCAL (3727245204) is safely unmounted via addonnomount.txt. Chen\'s VManip Patch (3262499127) remains active for MW Base & ARC9 without c_vmanip.mdl bone/vertex crashes.',
+            undoActionText: 'Re-enable GCAL'
+        });
+    }
+
     // Check active bases
     for (const [baseKey, baseDef] of Object.entries(KNOWN_BASES)) {
         if (installedWorkshopIds.has(baseDef.workshopId)) {
@@ -593,7 +622,8 @@ function fixAddonConflict(gmodInfo, conflictKey) {
 
     const conflictsMap = {
         'alphabet_lore': ['2957323514', '2988753442', '2995239904'],
-        'italian_brainrot': ['3483718453']
+        'italian_brainrot': ['3483718453'],
+        'gcal_vmanip': ['3727245204']
     };
 
     let targetWorkshopIds = [];
@@ -640,7 +670,8 @@ function undoAddonConflict(gmodInfo, conflictKey) {
 
     const conflictsMap = {
         'alphabet_lore': ['2957323514', '2988753442', '2995239904'],
-        'italian_brainrot': ['3483718453']
+        'italian_brainrot': ['3483718453'],
+        'gcal_vmanip': ['3727245204']
     };
 
     const targetWorkshopIds = conflictsMap[conflictKey] || [];
