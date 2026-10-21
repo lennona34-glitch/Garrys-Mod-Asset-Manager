@@ -53,5 +53,13 @@ contextBridge.exposeInMainWorld('api', {
     getPublishedNavmeshes: () => ipcRenderer.invoke('get-published-navmeshes'),
     applyControllerTuning: (preset) => ipcRenderer.invoke('apply-controller-tuning', preset),
     onNavmeshCompleted: (callback) => ipcRenderer.on('navmesh-completed', (_event, mapName) => callback(mapName)),
-    onNavmeshProgress: (callback) => ipcRenderer.on('navmesh-progress', (_event, data) => callback(data))
+    onNavmeshProgress: (callback) => ipcRenderer.on('navmesh-progress', (_event, data) => callback(data)),
+
+    // Asset Studio / 2D Character Editor
+    scanEditableCharacters: () => ipcRenderer.invoke('scan-editable-characters'),
+    loadCharacterEditor: (characterId) => ipcRenderer.invoke('load-character-editor', characterId),
+    selectImageDialog: () => ipcRenderer.invoke('select-image-dialog'),
+    selectAudioDialog: () => ipcRenderer.invoke('select-audio-dialog'),
+    saveEditedCharacter: (payload) => ipcRenderer.invoke('save-edited-character', payload),
+    publishEditedCharacter: (payload) => ipcRenderer.invoke('publish-edited-character', payload)
 });

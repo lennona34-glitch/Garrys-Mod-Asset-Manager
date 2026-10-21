@@ -2470,3 +2470,636 @@ function renderDiagnostics() {
         container.appendChild(group);
     }
 }
+
+
+// ============================================================================
+// 🎨 2D ASSET STUDIO (CHARACTER & NEXTBOT EDITOR)
+// ============================================================================
+
+const studioState = {
+    initialized: false,
+    characters: [],
+    selectedCharId: null,
+    loadedChar: null,
+    photoImg: null,       // HTMLImageElement currently loaded on canvas
+    zoom: 1.0,            // 0.2 to 3.5
+    panX: 0,
+    panY: 0,
+    cropShape: 'square',  // 'square' | 'rounded' | 'circle'
+    isDragging: false,
+    dragStartX: 0,
+    dragStartY: 0,
+    soundSwaps: {},       // { [relPath]: { filePath, fileName, fileSize } }
+    activeAudio: null,
+    activeAudioBtn: null
+};
+
+async function refreshStudioCharacters() {
+    if (!window.api.scanEditableCharacters) return [];
+    try {
+        const chars = await window.api.scanEditableCharacters();
+        studioState.characters = chars || [];
+        state.studioCharacters = studioState.characters;
+
+        const badge = document.getElementById('studioCountBadge');
+        if (badge && studioState.characters.length > 0) {
+            badge.textContent = `${studioState.characters.length} Ready`;
+        }
+
+        renderStudioCharactersList();
+
+        // Auto-load the first character if none selected yet
+        if (!studioState.selectedCharId && studioState.characters.length > 0) {
+            await selectStudioCharacter(studioState.characters[0].id);
+        } else if (!studioState.selectedCharId) {
+            await selectStudioCharacter('template_new');
+        }
+        return studioState.characters;
+    } catch (err) {
+        console.error('Error scanning studio characters:', err);
+        return [];
+    }
+}
+
+function renderStudioCharactersList() {
+    const container = document.getElementById('studioCharactersList');
+    if (!container) return;
+
+    if (!studioState.characters || studioState.characters.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 18px 10px; color: #94a3b8; font-size: 12px;">
+                No 2D characters detected yet. Click <strong>+ Create Blank 2D Character</strong> above to make your first one!
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = '';
+    studioState.characters.forEach(ch => {
+        const isSelected = studioState.selectedCharId === ch.id;
+        const item = document.createElement('div');
+        item.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            background: ${isSelected ? 'rgba(168, 85, 247, 0.22)' : 'rgba(15, 23, 42, 0.6)'};
+            border: 1px solid ${isSelected ? '#a855f7' : 'rgba(255, 255, 255, 0.07)'};
+        `;
+
+        const thumbHtml = ch.previewDataUrl
+            ? `<img src="${ch.previewDataUrl}" style="width: 42px; height: 42px; border-radius: 6px; object-fit: cover; background: #090d16; border: 1px solid rgba(255,255,255,0.12); flex-shrink: 0;">`
+            : `<div style="width: 42px; height: 42px; border-radius: 6px; background: #1e293b; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">🖼️</div>`;
+
+        item.innerHTML = `
+            ${thumbHtml}
+            <div style="min-width: 0; flex: 1;">
+                <div style="font-size: 12.5px; font-weight: 600; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${ch.name}">
+                    ${ch.name}
+                </div>
+                <div style="font-size: 10.5px; color: #94a3b8; display: flex; gap: 6px; align-items: center; margin-top: 2px;">
+                    <span>${ch.isCustomRemix ? '✨ Custom Remix' : '📦 Workshop 2D'}</span>
+                    <span>•</span>
+                    <span>🎵 ${ch.soundsCount} audio</span>
+                </div>
+            </div>
+        `;
+
+        item.addEventListener('click', () => {
+            selectStudioCharacter(ch.id);
+        });
+
+        container.appendChild(item);
+    });
+}
+
+function stopStudioAudioPreview() {
+    if (studioState.activeAudio) {
+        studioState.activeAudio.pause();
+        studioState.activeAudio.currentTime = 0;
+        studioState.activeAudio = null;
+    }
+    if (studioState.activeAudioBtn) {
+        studioState.activeAudioBtn.innerHTML = '▶ Play';
+        studioState.activeAudioBtn = null;
+    }
+}
+
+async function selectStudioCharacter(charId) {
+    stopStudioAudioPreview();
+    studioState.selectedCharId = charId;
+    studioState.soundSwaps = {};
+    renderStudioCharactersList();
+
+    const banner = document.getElementById('studioSaveStatusBanner');
+    if (banner) banner.style.display = 'none';
+
+    try {
+        const loaded = await window.api.loadCharacterEditor(charId);
+        studioState.loadedChar = loaded;
+
+        // Populate Name & Mode
+        const inpName = document.getElementById('inpStudioCharName');
+        const selMode = document.getElementById('selStudioSaveMode');
+        if (inpName) {
+            inpName.value = loaded.isNewTemplate
+                ? 'My Custom 2D Nextbot'
+                : `${loaded.displayName} (Remix)`;
+        }
+        if (selMode) {
+            selMode.value = 'new_character';
+            selMode.disabled = Boolean(loaded.isNewTemplate);
+        }
+
+        // Populate Sliders
+        const rngSprite = document.getElementById('rngStudioSpriteSize');
+        const lblSprite = document.getElementById('lblStudioSpriteSize');
+        if (rngSprite && lblSprite) {
+            rngSprite.value = loaded.spriteSize || 128;
+            lblSprite.textContent = `${rngSprite.value} units`;
+        }
+
+        const rngSpeed = document.getElementById('rngStudioSpeed');
+        const lblSpeed = document.getElementById('lblStudioSpeed');
+        if (rngSpeed && lblSpeed) {
+            rngSpeed.value = loaded.chaseSpeed || 650;
+            lblSpeed.textContent = rngSpeed.value;
+        }
+
+        const rngJump = document.getElementById('rngStudioJump');
+        const lblJump = document.getElementById('lblStudioJump');
+        if (rngJump && lblJump) {
+            rngJump.value = loaded.jumpHeight !== undefined ? loaded.jumpHeight : 300;
+            lblJump.textContent = rngJump.value;
+        }
+
+        const rngForce = document.getElementById('rngStudioForce');
+        const lblForce = document.getElementById('lblStudioForce');
+        if (rngForce && lblForce) {
+            rngForce.value = loaded.attackForce || 800;
+            lblForce.textContent = rngForce.value;
+        }
+
+        const chkSmash = document.getElementById('chkStudioSmashProps');
+        if (chkSmash) {
+            chkSmash.checked = loaded.smashProps !== false;
+        }
+
+        // Load Photo into Interactive Canvas
+        if (loaded.imageDataUrl) {
+            loadPhotoIntoStudioCanvas(loaded.imageDataUrl, 'contain');
+        } else {
+            studioState.photoImg = null;
+            drawStudioCanvas();
+        }
+
+        // Render Sound Slots
+        renderStudioSoundsList();
+    } catch (err) {
+        showToast('Failed to load character into Studio: ' + err.message, 'error');
+    }
+}
+
+function loadPhotoIntoStudioCanvas(dataUrl, initialFit = 'contain') {
+    const img = new Image();
+    img.onload = () => {
+        studioState.photoImg = img;
+        studioState.panX = 0;
+        studioState.panY = 0;
+
+        const dimLabel = document.getElementById('studioPhotoDimensionsLabel');
+        if (dimLabel) {
+            dimLabel.textContent = `Photo: ${img.naturalWidth}×${img.naturalHeight} → 512×512`;
+        }
+
+        if (initialFit === 'cover') {
+            fitStudioPhotoCover();
+        } else {
+            fitStudioPhotoContain();
+        }
+    };
+    img.src = dataUrl;
+}
+
+function fitStudioPhotoContain() {
+    if (!studioState.photoImg) return;
+    const img = studioState.photoImg;
+    const scale = Math.min(512 / img.naturalWidth, 512 / img.naturalHeight);
+    studioState.zoom = scale;
+    studioState.panX = 0;
+    studioState.panY = 0;
+    syncStudioZoomUI();
+    drawStudioCanvas();
+}
+
+function fitStudioPhotoCover() {
+    if (!studioState.photoImg) return;
+    const img = studioState.photoImg;
+    const scale = Math.max(512 / img.naturalWidth, 512 / img.naturalHeight);
+    studioState.zoom = scale;
+    studioState.panX = 0;
+    studioState.panY = 0;
+    syncStudioZoomUI();
+    drawStudioCanvas();
+}
+
+function syncStudioZoomUI() {
+    const rngZoom = document.getElementById('rngStudioZoom');
+    const lblZoom = document.getElementById('lblStudioZoom');
+    if (!studioState.photoImg) {
+        if (rngZoom) rngZoom.value = 100;
+        if (lblZoom) lblZoom.textContent = '100%';
+        return;
+    }
+    const baseContain = Math.min(512 / studioState.photoImg.naturalWidth, 512 / studioState.photoImg.naturalHeight);
+    const pct = Math.round((studioState.zoom / baseContain) * 100);
+    const clampedPct = Math.max(20, Math.min(350, pct));
+    if (rngZoom) rngZoom.value = clampedPct;
+    if (lblZoom) lblZoom.textContent = `${clampedPct}%`;
+}
+
+function drawStudioCanvas() {
+    const canvas = document.getElementById('studioPhotoCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 512, 512);
+
+    ctx.save();
+    if (studioState.cropShape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(256, 256, 248, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+    } else if (studioState.cropShape === 'rounded') {
+        const r = 48;
+        ctx.beginPath();
+        ctx.moveTo(r, 8);
+        ctx.lineTo(512 - r, 8);
+        ctx.quadraticCurveTo(504, 8, 504, r);
+        ctx.lineTo(504, 512 - r);
+        ctx.quadraticCurveTo(504, 504, 512 - r, 504);
+        ctx.lineTo(r, 504);
+        ctx.quadraticCurveTo(8, 504, 8, 512 - r);
+        ctx.lineTo(8, r);
+        ctx.quadraticCurveTo(8, 8, r, 8);
+        ctx.closePath();
+        ctx.clip();
+    }
+
+    if (studioState.photoImg) {
+        const img = studioState.photoImg;
+        const drawW = img.naturalWidth * studioState.zoom;
+        const drawH = img.naturalHeight * studioState.zoom;
+        const drawX = (512 - drawW) / 2 + studioState.panX;
+        const drawY = (512 - drawH) / 2 + studioState.panY;
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    } else {
+        // Friendly empty state on canvas
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 26px Segoe UI, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Click "Switch Photo (.jpg / .png)"', 256, 240);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '18px Segoe UI, sans-serif';
+        ctx.fillText('to drop in any picture & zoom to fit!', 256, 278);
+    }
+
+    ctx.restore();
+}
+
+function renderStudioSoundsList() {
+    const container = document.getElementById('studioSoundsList');
+    if (!container || !studioState.loadedChar) return;
+
+    const sounds = studioState.loadedChar.sounds || [];
+    container.innerHTML = '';
+
+    sounds.forEach(s => {
+        const swapped = studioState.soundSwaps[s.relPath];
+        const hasAudioSource = Boolean(swapped || (s.hasFile && s.fullPath));
+        const activeFilePath = swapped ? swapped.filePath : s.fullPath;
+
+        const row = document.createElement('div');
+        row.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: ${swapped ? 'rgba(52, 211, 153, 0.12)' : 'rgba(15, 23, 42, 0.55)'};
+            border: 1px solid ${swapped ? 'rgba(52, 211, 153, 0.4)' : 'rgba(255, 255, 255, 0.07)'};
+        `;
+
+        row.innerHTML = `
+            <div style="min-width: 0; flex: 1;">
+                <div style="font-size: 12px; font-weight: 600; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    ${s.label}
+                </div>
+                <div style="font-size: 11px; color: ${swapped ? '#34d399' : '#94a3b8'}; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    ${swapped ? `✓ Swapped: ${swapped.fileName}` : (s.hasFile ? s.relPath : 'No audio selected yet')}
+                </div>
+            </div>
+            <div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">
+                ${hasAudioSource ? `
+                <button class="btn btn-secondary btn-xs btn-studio-play-audio" style="padding: 4px 8px; font-size: 11px;">▶ Play</button>
+                ` : ''}
+                <button class="btn btn-primary btn-xs btn-studio-swap-audio" style="padding: 4px 10px; font-size: 11px;">
+                    🎵 Change Audio
+                </button>
+                ${swapped ? `
+                <button class="btn btn-secondary btn-xs btn-studio-reset-audio" title="Revert to original sound" style="padding: 4px 6px; font-size: 11px;">↩</button>
+                ` : ''}
+            </div>
+        `;
+
+        const btnPlay = row.querySelector('.btn-studio-play-audio');
+        if (btnPlay && activeFilePath) {
+            btnPlay.addEventListener('click', () => {
+                if (studioState.activeAudioBtn === btnPlay) {
+                    stopStudioAudioPreview();
+                    return;
+                }
+                stopStudioAudioPreview();
+                const fileUrl = 'file:///' + activeFilePath.replace(/\\/g, '/');
+                const audio = new Audio(fileUrl);
+                studioState.activeAudio = audio;
+                studioState.activeAudioBtn = btnPlay;
+                btnPlay.innerHTML = '⏹ Stop';
+                audio.play().catch(err => {
+                    showToast('Could not play audio preview: ' + err.message, 'error');
+                    stopStudioAudioPreview();
+                });
+                audio.onended = () => {
+                    stopStudioAudioPreview();
+                };
+            });
+        }
+
+        const btnSwap = row.querySelector('.btn-studio-swap-audio');
+        btnSwap.addEventListener('click', async () => {
+            stopStudioAudioPreview();
+            const picked = await window.api.selectAudioDialog();
+            if (picked && picked.filePath) {
+                studioState.soundSwaps[s.relPath] = picked;
+                renderStudioSoundsList();
+                showToast(`🎵 Loaded "${picked.fileName}" for ${s.label}!`, 'success');
+            }
+        });
+
+        const btnReset = row.querySelector('.btn-studio-reset-audio');
+        if (btnReset) {
+            btnReset.addEventListener('click', () => {
+                stopStudioAudioPreview();
+                delete studioState.soundSwaps[s.relPath];
+                renderStudioSoundsList();
+            });
+        }
+
+        container.appendChild(row);
+    });
+}
+
+function buildStudioSavePayload() {
+    const canvas = document.getElementById('studioPhotoCanvas');
+    const croppedImageDataUrl = (studioState.photoImg && canvas)
+        ? canvas.toDataURL('image/png')
+        : null;
+
+    const soundSwapsMap = {};
+    for (const [relPath, info] of Object.entries(studioState.soundSwaps)) {
+        if (info && info.filePath) {
+            soundSwapsMap[relPath] = info.filePath;
+        }
+    }
+
+    return {
+        characterId: studioState.selectedCharId || 'template_new',
+        saveMode: document.getElementById('selStudioSaveMode')?.value || 'new_character',
+        displayName: (document.getElementById('inpStudioCharName')?.value || 'My Custom 2D Nextbot').trim(),
+        category: 'Nextbot',
+        croppedImageDataUrl,
+        spriteSize: parseInt(document.getElementById('rngStudioSpriteSize')?.value || '128', 10),
+        chaseSpeed: parseInt(document.getElementById('rngStudioSpeed')?.value || '650', 10),
+        jumpHeight: parseInt(document.getElementById('rngStudioJump')?.value || '300', 10),
+        attackForce: parseInt(document.getElementById('rngStudioForce')?.value || '800', 10),
+        smashProps: document.getElementById('chkStudioSmashProps')?.checked !== false,
+        soundSwaps: soundSwapsMap
+    };
+}
+
+function openCharacterInStudio(charId) {
+    const studioNavBtn = document.querySelector('.nav-item[data-tab="studio"]');
+    if (studioNavBtn) studioNavBtn.click();
+    selectStudioCharacter(charId);
+}
+
+function initStudioIfNeeded() {
+    if (!studioState.initialized) {
+        studioState.initialized = true;
+        setupStudioControls();
+    }
+    if (!studioState.characters || studioState.characters.length === 0) {
+        refreshStudioCharacters();
+    }
+}
+
+function setupStudioControls() {
+    const canvas = document.getElementById('studioPhotoCanvas');
+    const rngZoom = document.getElementById('rngStudioZoom');
+
+    // Drag to pan photo inside canvas
+    if (canvas) {
+        canvas.addEventListener('mousedown', (e) => {
+            if (!studioState.photoImg) return;
+            studioState.isDragging = true;
+            studioState.dragStartX = e.clientX - studioState.panX;
+            studioState.dragStartY = e.clientY - studioState.panY;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!studioState.isDragging) return;
+            studioState.panX = e.clientX - studioState.dragStartX;
+            studioState.panY = e.clientY - studioState.dragStartY;
+            drawStudioCanvas();
+        });
+
+        window.addEventListener('mouseup', () => {
+            studioState.isDragging = false;
+        });
+
+        // Mouse wheel zoom directly on canvas
+        canvas.addEventListener('wheel', (e) => {
+            if (!studioState.photoImg) return;
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.08 : 0.92;
+            const baseContain = Math.min(512 / studioState.photoImg.naturalWidth, 512 / studioState.photoImg.naturalHeight);
+            const minZoom = baseContain * 0.2;
+            const maxZoom = baseContain * 3.5;
+            studioState.zoom = Math.max(minZoom, Math.min(maxZoom, studioState.zoom * factor));
+            syncStudioZoomUI();
+            drawStudioCanvas();
+        }, { passive: false });
+    }
+
+    if (rngZoom) {
+        rngZoom.addEventListener('input', () => {
+            if (!studioState.photoImg) return;
+            const pct = parseInt(rngZoom.value, 10) || 100;
+            const baseContain = Math.min(512 / studioState.photoImg.naturalWidth, 512 / studioState.photoImg.naturalHeight);
+            studioState.zoom = baseContain * (pct / 100);
+            const lblZoom = document.getElementById('lblStudioZoom');
+            if (lblZoom) lblZoom.textContent = `${pct}%`;
+            drawStudioCanvas();
+        });
+    }
+
+    document.getElementById('btnStudioChoosePhoto')?.addEventListener('click', async () => {
+        const picked = await window.api.selectImageDialog();
+        if (picked && picked.dataUrl) {
+            loadPhotoIntoStudioCanvas(picked.dataUrl, 'cover');
+            showToast(`🖼️ Switched photo to "${picked.fileName}"! Drag or scroll to adjust fit.`, 'success');
+        }
+    });
+
+    document.getElementById('btnStudioFitContain')?.addEventListener('click', () => fitStudioPhotoContain());
+    document.getElementById('btnStudioFitCover')?.addEventListener('click', () => fitStudioPhotoCover());
+    document.getElementById('btnStudioCenterPhoto')?.addEventListener('click', () => {
+        studioState.panX = 0;
+        studioState.panY = 0;
+        drawStudioCanvas();
+    });
+
+    document.getElementById('selStudioCropShape')?.addEventListener('change', (e) => {
+        studioState.cropShape = e.target.value;
+        drawStudioCanvas();
+    });
+
+    document.getElementById('btnStudioNewBlank')?.addEventListener('click', () => {
+        selectStudioCharacter('template_new');
+        showToast('✨ Started a Blank 2D Character! Choose a photo and music to begin.', 'info');
+    });
+
+    document.getElementById('btnRefreshStudioChars')?.addEventListener('click', () => {
+        refreshStudioCharacters();
+    });
+
+    // Movement Sliders live labels
+    const bindSliderLabel = (sliderId, labelId, suffix = '') => {
+        const s = document.getElementById(sliderId);
+        const l = document.getElementById(labelId);
+        if (s && l) {
+            s.addEventListener('input', () => {
+                l.textContent = `${s.value}${suffix}`;
+            });
+        }
+    };
+    bindSliderLabel('rngStudioSpriteSize', 'lblStudioSpriteSize', ' units');
+    bindSliderLabel('rngStudioSpeed', 'lblStudioSpeed', '');
+    bindSliderLabel('rngStudioJump', 'lblStudioJump', '');
+    bindSliderLabel('rngStudioForce', 'lblStudioForce', '');
+
+    // Save Locally to Garry's Mod
+    const btnSaveLocal = document.getElementById('btnStudioSaveLocal');
+    if (btnSaveLocal) {
+        btnSaveLocal.addEventListener('click', async () => {
+            if (!studioState.photoImg) {
+                return showToast('Please choose a character photo first!', 'error');
+            }
+            const payload = buildStudioSavePayload();
+            btnSaveLocal.disabled = true;
+            const origHtml = btnSaveLocal.innerHTML;
+            btnSaveLocal.innerHTML = '<span>Saving to Garry\'s Mod...</span>';
+
+            try {
+                const res = await window.api.saveEditedCharacter(payload);
+                if (res && res.success) {
+                    showToast(`🎉 Saved "${res.displayName}" to Garry's Mod! Spawn it under Q-Menu → NPCs → Nextbot.`, 'success');
+                    const banner = document.getElementById('studioSaveStatusBanner');
+                    if (banner) {
+                        banner.style.display = 'block';
+                        banner.style.background = 'rgba(52, 211, 153, 0.15)';
+                        banner.style.border = '1px solid rgba(52, 211, 153, 0.4)';
+                        banner.style.color = '#34d399';
+                        banner.innerHTML = `✅ <strong>Ready in Garry's Mod!</strong> Saved to <code>garrysmod/addons/${res.addonDir.split(/[\\/]/).pop()}</code>. Open GMod → press <strong>Q</strong> → <strong>NPCs</strong> → <strong>Nextbot</strong> → spawn <strong>${res.displayName}</strong>!`;
+                    }
+                    await Promise.all([refreshStudioCharacters(), refreshAddons()]);
+                }
+            } catch (err) {
+                showToast('Save error: ' + err.message, 'error');
+            } finally {
+                btnSaveLocal.disabled = false;
+                btnSaveLocal.innerHTML = origHtml;
+            }
+        });
+    }
+
+    // Publish to Steam Workshop
+    const btnPublishWs = document.getElementById('btnStudioPublishWorkshop');
+    if (btnPublishWs) {
+        btnPublishWs.addEventListener('click', async () => {
+            if (!studioState.photoImg) {
+                return showToast('Please choose a character photo first!', 'error');
+            }
+            const payload = buildStudioSavePayload();
+            if (!confirm(`Upload "${payload.displayName}" to Steam Workshop?\n\nTip: Original characters made from your own photos/sounds are great for public Workshop! If remixing another creator's addon, you can set visibility to Friends-Only/Private on Steam or credit the original creator.`)) {
+                return;
+            }
+
+            btnPublishWs.disabled = true;
+            const origHtml = btnPublishWs.innerHTML;
+            btnPublishWs.innerHTML = '<span>Uploading to Steam...</span>';
+
+            try {
+                const res = await window.api.publishEditedCharacter(payload);
+                const banner = document.getElementById('studioSaveStatusBanner');
+                if (res && res.success) {
+                    showToast(res.message || 'Uploaded to Steam Workshop!', 'success');
+                    if (banner) {
+                        banner.style.display = 'block';
+                        banner.style.background = 'rgba(168, 85, 247, 0.18)';
+                        banner.style.border = '1px solid rgba(168, 85, 247, 0.45)';
+                        banner.style.color = '#e9d5ff';
+                        banner.innerHTML = `☁️ <strong>Published to Steam Workshop!</strong> ${res.workshopId ? `(ID: ${res.workshopId})` : ''} ${res.url ? `<a href="#" id="lnkOpenStudioWsItem" style="color: #38bdf8; margin-left: 8px; text-decoration: underline;">Open in Steam ↗</a>` : ''}`;
+                        if (res.workshopId) {
+                            setTimeout(() => {
+                                document.getElementById('lnkOpenStudioWsItem')?.addEventListener('click', (e) => {
+                                    e.preventDefault();
+                                    window.api.openSteamClient(res.workshopId);
+                                });
+                            }, 20);
+                        }
+                    }
+                    await Promise.all([refreshStudioCharacters(), refreshAddons()]);
+                } else {
+                    showToast('Workshop upload failed: ' + (res?.error || 'Unknown error'), 'error');
+                }
+            } catch (err) {
+                showToast('Workshop error: ' + err.message, 'error');
+            } finally {
+                btnPublishWs.disabled = false;
+                btnPublishWs.innerHTML = origHtml;
+            }
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const studioTabBtn = document.querySelector('.nav-item[data-tab="studio"]');
+    if (studioTabBtn) {
+        studioTabBtn.addEventListener('click', () => {
+            initStudioIfNeeded();
+        });
+    }
+    setTimeout(() => {
+        initStudioIfNeeded();
+    }, 600);
+});

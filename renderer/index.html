@@ -35,6 +35,11 @@
                     <span>Assets & Addons</span>
                     <span class="badge" id="addonsCountBadge">0</span>
                 </button>
+                <button class="nav-item" data-tab="studio">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+                    <span>2D Asset Studio</span>
+                    <span class="badge" id="studioCountBadge" style="background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4);">New</span>
+                </button>
                 <button class="nav-item" data-tab="presets">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                     <span>Presets & Loadouts</span>
@@ -151,6 +156,182 @@
                     <div class="loading-state">
                         <div class="spinner"></div>
                         <p>Scanning installed addons...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: 2D ASSET STUDIO (CHARACTER & NEXTBOT EDITOR) -->
+            <section class="tab-pane" id="pane-studio">
+                <div class="section-hero" style="margin-bottom: 18px; padding: 18px 22px; background: linear-gradient(135deg, rgba(88, 28, 135, 0.28), rgba(15, 23, 42, 0.9)); border: 1px solid rgba(168, 85, 247, 0.35);">
+                    <div class="hero-content">
+                        <h2 style="display: flex; align-items: center; gap: 10px;">
+                            <span>🎨 2D Character & NextBot Asset Studio</span>
+                            <span class="badge" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); font-size: 11px;">Beginner-Friendly Modding</span>
+                        </h2>
+                        <p>Pick any downloaded 2D character (or start blank), swap in your own photo, zoom &amp; drag to fit, swap the chase music, and save straight to Garry's Mod or upload to Steam Workshop!</p>
+                    </div>
+                    <button class="btn btn-primary" id="btnStudioNewBlank" style="background: linear-gradient(135deg, #a855f7, #6366f1); border: none;">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        <span>+ Create Blank 2D Character</span>
+                    </button>
+                </div>
+
+                <div class="studio-workspace-grid" style="display: grid; grid-template-columns: 270px 1fr 1.15fr; gap: 18px; align-items: start;">
+                    <!-- Left Column: Installed 2D Characters List -->
+                    <div class="card" style="padding: 14px; max-height: calc(100vh - 235px); display: flex; flex-direction: column;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin: 0;">1. Pick a Base Character</h3>
+                            <button class="btn btn-secondary btn-xs" id="btnRefreshStudioChars" title="Rescan 2D Characters" style="padding: 2px 8px; font-size: 11px;">↻</button>
+                        </div>
+                        <div id="studioCharactersList" style="overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; flex: 1;">
+                            <div class="loading-state" style="padding: 24px 10px;">
+                                <div class="spinner"></div>
+                                <p style="font-size: 12px;">Finding 2D characters...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Center Column: Interactive Photo Switcher, Zoom & Crop Canvas -->
+                    <div class="card" style="padding: 18px; display: flex; flex-direction: column; align-items: center;">
+                        <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <div>
+                                <h3 style="font-size: 15px; margin: 0; color: #f8fafc;">2. Character Photo &amp; Zoom Fit</h3>
+                                <span style="font-size: 11px; color: #94a3b8;">Drag photo to position • Scroll wheel or slider to zoom</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm" id="btnStudioChoosePhoto">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                <span>Switch Photo (.jpg / .png)</span>
+                            </button>
+                        </div>
+
+                        <!-- Interactive 512x512 Canvas Wrapper -->
+                        <div id="studioCanvasContainer" style="position: relative; width: 320px; height: 320px; border-radius: 10px; overflow: hidden; border: 2px solid rgba(56, 189, 248, 0.45); background: repeating-conic-gradient(#1e293b 0% 25%, #0f172a 0% 50%) 50% / 24px 24px; cursor: grab; box-shadow: 0 12px 30px rgba(0,0,0,0.45);">
+                            <canvas id="studioPhotoCanvas" width="512" height="512" style="width: 100%; height: 100%; display: block;"></canvas>
+                            <div style="position: absolute; bottom: 8px; left: 10px; right: 10px; display: flex; justify-content: space-between; pointer-events: none; font-size: 10px; color: rgba(255,255,255,0.75); background: rgba(15, 23, 42, 0.75); padding: 4px 8px; border-radius: 6px;">
+                                <span id="studioPhotoDimensionsLabel">512 × 512 GMod Sprite</span>
+                                <span>Drag to Pan • Scroll to Zoom</span>
+                            </div>
+                        </div>
+
+                        <!-- Zoom Slider -->
+                        <div style="width: 100%; margin-top: 14px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 4px;">
+                                <label style="color: #cbd5e1; font-weight: 600;">Photo Zoom:</label>
+                                <span id="lblStudioZoom" style="font-family: var(--font-mono); color: #38bdf8; font-weight: 700;">100%</span>
+                            </div>
+                            <input type="range" id="rngStudioZoom" min="20" max="350" step="1" value="100" style="width: 100%; accent-color: #38bdf8; cursor: pointer;">
+                        </div>
+
+                        <!-- Quick Fit & Frame Shape Controls -->
+                        <div style="width: 100%; display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+                            <div style="display: flex; gap: 6px;">
+                                <button class="btn btn-secondary btn-xs" id="btnStudioFitContain" title="Zoom out so the entire photo fits inside the frame">Fit Whole Photo</button>
+                                <button class="btn btn-secondary btn-xs" id="btnStudioFitCover" title="Zoom in so the photo fills the entire square">Fill Square</button>
+                                <button class="btn btn-secondary btn-xs" id="btnStudioCenterPhoto" title="Center photo in frame">Center</button>
+                            </div>
+                            <select id="selStudioCropShape" class="select-styled" style="padding: 4px 8px; font-size: 11px;">
+                                <option value="square">Shape: Classic Square (.jpg)</option>
+                                <option value="rounded">Shape: Rounded Corners</option>
+                                <option value="circle">Shape: Circle Cutout</option>
+                            </select>
+                        </div>
+
+                        <!-- In-Game World Size -->
+                        <div style="width: 100%; margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 4px;">
+                                <label style="color: #cbd5e1; font-weight: 600;">In-Game Character Height / Size:</label>
+                                <span id="lblStudioSpriteSize" style="font-family: var(--font-mono); color: #c084fc; font-weight: 700;">128 units (Standard)</span>
+                            </div>
+                            <input type="range" id="rngStudioSpriteSize" min="48" max="280" step="8" value="128" style="width: 100%; accent-color: #a855f7; cursor: pointer;">
+                            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #64748b;">
+                                <span>48 (Tiny Gremlin)</span>
+                                <span>128 (Standard NextBot)</span>
+                                <span>280 (Giant Boss)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Music Swapper, Movements & Save/Publish -->
+                    <div style="display: flex; flex-direction: column; gap: 14px;">
+                        <!-- Character Name & Mode Card -->
+                        <div class="card" style="padding: 16px;">
+                            <h3 style="font-size: 15px; margin: 0 0 10px 0; color: #f8fafc;">3. Name, Music &amp; Little Movements</h3>
+                            <div style="display: grid; grid-template-columns: 1fr 160px; gap: 10px; margin-bottom: 10px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 11px;">Character Name (Shown in GMod NPCs Menu):</label>
+                                    <input type="text" id="inpStudioCharName" placeholder="e.g. Mad Spongebob Deluxe">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 11px;">How to Save:</label>
+                                    <select id="selStudioSaveMode" class="select-styled" style="width: 100%; height: 36px;">
+                                        <option value="new_character">✨ New Character (Keep Original)</option>
+                                        <option value="override">⚡ Override Original In-Place</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Music & Sounds Card -->
+                        <div class="card" style="padding: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <div>
+                                    <h4 style="margin: 0; font-size: 13px; color: #f8fafc;">🎵 Chase Music &amp; Sound Effects</h4>
+                                    <span style="font-size: 11px; color: #94a3b8;">Preview current sounds or swap in any .mp3 or .wav file</span>
+                                </div>
+                            </div>
+                            <div id="studioSoundsList" style="display: flex; flex-direction: column; gap: 8px; max-height: 195px; overflow-y: auto; padding-right: 4px;">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Movement Sliders Card -->
+                        <div class="card" style="padding: 16px;">
+                            <h4 style="margin: 0 0 10px 0; font-size: 13px; color: #f8fafc;">🏃 Movement &amp; Chase Behavior</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                <div>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px;">
+                                        <span style="color: #cbd5e1;">Chase Run Speed:</span>
+                                        <strong id="lblStudioSpeed" style="color: #38bdf8; font-family: var(--font-mono);">650</strong>
+                                    </div>
+                                    <input type="range" id="rngStudioSpeed" min="250" max="1400" step="25" value="650" style="width: 100%; accent-color: #38bdf8;">
+                                </div>
+                                <div>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px;">
+                                        <span style="color: #cbd5e1;">Jump Leap Height:</span>
+                                        <strong id="lblStudioJump" style="color: #38bdf8; font-family: var(--font-mono);">300</strong>
+                                    </div>
+                                    <input type="range" id="rngStudioJump" min="0" max="700" step="25" value="300" style="width: 100%; accent-color: #38bdf8;">
+                                </div>
+                                <div>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px;">
+                                        <span style="color: #cbd5e1;">Punch Throw Force:</span>
+                                        <strong id="lblStudioForce" style="color: #38bdf8; font-family: var(--font-mono);">800</strong>
+                                    </div>
+                                    <input type="range" id="rngStudioForce" min="200" max="2000" step="50" value="800" style="width: 100%; accent-color: #38bdf8;">
+                                </div>
+                                <div style="display: flex; align-items: center;">
+                                    <label class="checkbox-label" style="font-size: 12px; color: #e2e8f0; cursor: pointer;">
+                                        <input type="checkbox" id="chkStudioSmashProps" checked>
+                                        <span>Smash Doors &amp; Props</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Save & Publish Actions Card -->
+                        <div class="card" style="padding: 16px; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(56, 189, 248, 0.3);">
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <button class="btn btn-primary" id="btnStudioSaveLocal" style="flex: 1; padding: 11px 16px; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 8px;">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                                    <span>Save to My Garry's Mod (Private Fun)</span>
+                                </button>
+                                <button class="btn btn-secondary" id="btnStudioPublishWorkshop" style="padding: 11px 16px; display: flex; align-items: center; gap: 8px; border-color: rgba(168, 85, 247, 0.45); color: #e9d5ff;" title="Pack and upload to Steam Workshop">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+                                    <span>Upload to Workshop</span>
+                                </button>
+                            </div>
+                            <div id="studioSaveStatusBanner" style="display: none; margin-top: 10px; padding: 10px 12px; border-radius: 6px; font-size: 12px; line-height: 1.4;"></div>
+                        </div>
                     </div>
                 </div>
             </section>

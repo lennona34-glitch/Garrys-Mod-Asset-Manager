@@ -12,6 +12,7 @@ const { loadPresets, createPreset, deletePreset, applyPreset } = require('./src/
 const { runDiagnostics, fixAddonConflict, undoAddonConflict, getDismissedNavState, dismissNavMap, dismissAllNavMaps, restoreNavMaps } = require('./src/diagnosticsManager');
 const { getDefaultTitle, getDefaultDescription, publishNavmeshToWorkshop, getPublishedNavmeshes, recordPublishedNavmesh } = require('./src/workshopPublisher');
 const { extractSingleFile } = require('./src/gmaParser');
+const { scanEditableCharacters, loadCharacterForEditing, saveEditedCharacter, publishCharacterToWorkshop } = require('./src/assetEditor');
 
 let mainWindow = null;
 let currentGmodInfo = null;
@@ -825,5 +826,72 @@ ipcMain.handle('apply-controller-tuning', async (event, options = 7) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     return applyControllerTuning(currentGmodInfo, options);
 });
+
+// ---------------- ASSET STUDIO / 2D CHARACTER EDITOR ----------------
+
+ipcMain.handle('scan-editable-characters', async () => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return await scanEditableCharacters(currentGmodInfo);
+});
+
+ipcMain.handle('load-character-editor', async (event, characterId) => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return await loadCharacterForEditing(currentGmodInfo, characterId);
+});
+
+ipcMain.handle('select-image-dialog', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Choose Character Photo (.jpg, .png, .webp)',
+        properties: ['openFile'],
+        filters: [
+            { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }
+        ]
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const filePath = result.filePaths[0];
+    const img = nativeImage.createFromPath(filePath);
+    let dataUrl = null;
+    if (!img.isEmpty()) {
+        dataUrl = img.toDataURL();
+    } else {
+        const ext = path.extname(filePath).toLowerCase().replace('.', '') || 'png';
+        const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
+        dataUrl = `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+    }
+    return {
+        filePath,
+        fileName: path.basename(filePath),
+        dataUrl
+    };
+});
+
+ipcMain.handle('select-audio-dialog', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Choose Character Music or Sound Effect (.mp3, .wav)',
+        properties: ['openFile'],
+        filters: [
+            { name: 'Audio Files (MP3, WAV, OGG)', extensions: ['mp3', 'wav', 'ogg'] }
+        ]
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const filePath = result.filePaths[0];
+    const stats = fs.statSync(filePath);
+    return {
+        filePath,
+        fileName: path.basename(filePath),
+        fileSize: stats.size
+    };
+});
+
+ipcMain.handle('save-edited-character', async (event, payload) => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return await saveEditedCharacter(currentGmodInfo, payload, nativeImage);
+});
+
+ipcMain.handle('publish-edited-character', async (event, payload) => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return await publishCharacterToWorkshop(currentGmodInfo, payload, nativeImage);
+});
+
 
 
