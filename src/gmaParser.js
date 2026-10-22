@@ -113,21 +113,41 @@ function parseGmaHeader(gmaPath) {
             .filter(f => f.name.toLowerCase().startsWith('maps/') && f.name.toLowerCase().endsWith('.nav'))
             .map(f => path.basename(f.name, '.nav'));
 
-        // Auto-detect category if not specified in metadata
+        // Auto-detect category using metadata type, file structure, and title
+        const lowerType = (addonType || '').toLowerCase();
+        const lowerName = (addonName || '').toLowerCase();
+        const lowerFiles = files.map(f => f.name.toLowerCase());
+
         let detectedCategory = addonType || 'Addon';
-        if (maps.length > 0) {
+        if (maps.length > 0 || navMeshes.length > 0 || lowerType === 'map') {
             detectedCategory = 'Map';
-        } else if (files.some(f => f.name.toLowerCase().includes('models/') || f.name.toLowerCase().includes('player/'))) {
-            detectedCategory = 'Model / Playermodel';
-        } else if (files.some(f => f.name.toLowerCase().includes('weapons/') || f.name.toLowerCase().includes('swep'))) {
-            detectedCategory = 'Weapon';
-        } else if (files.some(f => f.name.toLowerCase().includes('vehicles/'))) {
-            detectedCategory = 'Vehicle';
-        } else if (files.some(f => f.name.toLowerCase().includes('gamemodes/'))) {
+        } else if (lowerType === 'gamemode' || lowerFiles.some(f => f.startsWith('gamemodes/'))) {
             detectedCategory = 'Gamemode';
-        } else if (files.some(f => f.name.toLowerCase().includes('tools/'))) {
+        } else if (
+            lowerType === 'npc' ||
+            lowerFiles.some(f => f.includes('lua/entities/npc_') || f.includes('lua/entities/nextbot_') || f.includes('lua/entities/drg_') || f.includes('lua/entities/sent_glitch_')) ||
+            /\b(nextbot|nextboat|snpc|npc|drgbase|vj base)\b/i.test(lowerName)
+        ) {
+            detectedCategory = 'NPCs & NextBots';
+        } else if (
+            lowerType === 'weapon' ||
+            lowerFiles.some(f => f.startsWith('lua/weapons/') || f.includes('/weapons/')) ||
+            /\b(swep|weapon|m9k|tfa|arccw|arc9|cw 2\.0)\b/i.test(lowerName)
+        ) {
+            detectedCategory = 'Weapon';
+        } else if (
+            lowerType === 'vehicle' ||
+            lowerFiles.some(f => f.startsWith('lua/vehicles/') || f.includes('models/vehicles/') || f.includes('models/tdmcars/')) ||
+            /\b(simfphys|vehicle|lvs|glide|scars)\b/i.test(lowerName)
+        ) {
+            detectedCategory = 'Vehicle';
+        } else if (lowerType === 'tool' || lowerFiles.some(f => f.includes('weapons/gmod_tool/stools/'))) {
             detectedCategory = 'Tool';
-        } else if (files.some(f => f.name.toLowerCase().includes('materials/'))) {
+        } else if (lowerType === 'effects' || /\b(reshade|realism|hud|fx|shader|effects?)\b/i.test(lowerName)) {
+            detectedCategory = 'Effects & Realism';
+        } else if (lowerType === 'model' || lowerFiles.some(f => f.includes('models/') || f.includes('player/'))) {
+            detectedCategory = 'Model / Playermodel';
+        } else if (lowerFiles.some(f => f.includes('materials/'))) {
             detectedCategory = 'Textures / Materials';
         }
 
@@ -141,6 +161,7 @@ function parseGmaHeader(gmaPath) {
             description: parsedDesc && parsedDesc.description ? parsedDesc.description : rawDesc,
             author: addonAuthor || 'Unknown',
             version: addonVersion,
+            addonType,
             category: detectedCategory,
             tags,
             filesCount: files.length,

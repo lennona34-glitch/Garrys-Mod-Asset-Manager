@@ -5,7 +5,7 @@ const fs = require('fs');
 
 const { detectGmodPaths, getAllSubscribedWorkshopIds } = require('./src/steamDetector');
 const { scanAllMaps, launchMap, connectToServer, getLocalNetworkInfo, scanLanGames, extractMapToNative, injectNavmeshAutopilot } = require('./src/mapManager');
-const { scanAllAddons, toggleAddonState, inspectGma, unpackAddon, packAddonFolder, deleteAddon } = require('./src/addonManager');
+const { scanAllAddons, classifyAddonSection, toggleAddonState, bulkToggleAddonStates, inspectGma, unpackAddon, packAddonFolder, deleteAddon } = require('./src/addonManager');
 const { analyzeStorage, cleanTarget } = require('./src/storageCleaner');
 const { fetchPublishedFileDetails, searchWorkshop, openInSteamClient, openInBrowser, openSteamWorkshopHub, openSteamUrl } = require('./src/workshopService');
 const { loadPresets, createPreset, deletePreset, applyPreset } = require('./src/presetsManager');
@@ -151,19 +151,22 @@ ipcMain.handle('scan-addons', async () => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     const addons = await scanAllAddons(currentGmodInfo);
 
-    // Enrich workshop addons with details (batch)
+    // Enrich workshop addons with details (batch) and classify every addon into its Section
     const workshopIds = [...new Set(addons.filter(a => a.workshopId).map(a => a.workshopId))];
-    if (workshopIds.length > 0) {
-        const details = await fetchPublishedFileDetails(workshopIds);
-        addons.forEach(a => {
-            if (a.workshopId && details[a.workshopId]) {
-                a.previewUrl = details[a.workshopId].previewUrl;
-                if (!a.description) a.description = details[a.workshopId].description;
-                a.subscriptions = details[a.workshopId].subscriptions;
-                a.views = details[a.workshopId].views;
-            }
-        });
-    }
+    const details = workshopIds.length > 0 ? await fetchPublishedFileDetails(workshopIds) : {};
+
+    addons.forEach(a => {
+        const wsDetail = a.workshopId ? details[a.workshopId] : null;
+        if (wsDetail) {
+            if (!a.previewUrl && wsDetail.previewUrl) a.previewUrl = wsDetail.previewUrl;
+            if ((!a.name || a.name === a.workshopId) && wsDetail.title) a.name = wsDetail.title;
+            if (!a.description && wsDetail.description) a.description = wsDetail.description;
+            if (Array.isArray(wsDetail.tags) && (!a.tags || a.tags.length === 0)) a.tags = wsDetail.tags;
+            a.subscriptions = wsDetail.subscriptions;
+            a.views = wsDetail.views;
+        }
+        a.category = classifyAddonSection(a, wsDetail);
+    });
 
     return addons;
 });
@@ -171,6 +174,11 @@ ipcMain.handle('scan-addons', async () => {
 ipcMain.handle('toggle-addon', async (event, { filePath, enable }) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     return toggleAddonState(filePath, enable, currentGmodInfo);
+});
+
+ipcMain.handle('bulk-toggle-addons', async (event, { filePaths, enable }) => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return bulkToggleAddonStates(filePaths, enable, currentGmodInfo);
 });
 
 ipcMain.handle('inspect-gma', async (event, filePath) => {

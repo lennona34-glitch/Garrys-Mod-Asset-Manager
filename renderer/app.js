@@ -22,7 +22,8 @@ const state = {
     wsHasMore: true,
     wsLoadingMore: false,
     isZenMode: false,
-    publishedNavmeshes: {}
+    publishedNavmeshes: {},
+    collapsedAddonSections: {}
 };
 
 // Helpers
@@ -331,32 +332,23 @@ function setupEventHandlers() {
         });
     }
 
-    // Zen Mode Fullscreen
-    const setZenMode = async (enable, showNotification = true) => {
+    // Zen Mode Fullscreen (controlled solely via the header box icon #btnToggleZen or F11 / Esc)
+    const setZenMode = async (enable) => {
         state.isZenMode = Boolean(enable);
         const layout = document.querySelector('.app-layout');
         const btnZen = document.getElementById('btnToggleZen');
-        const btnFloatExit = document.getElementById('btnFloatingExitZen');
 
         if (state.isZenMode) {
             if (layout) layout.classList.add('zen-mode');
-            if (btnFloatExit) btnFloatExit.style.display = 'inline-flex';
             if (btnZen) {
                 btnZen.classList.add('active');
                 btnZen.title = 'Exit Fullscreen Zen Mode (F11 / Esc)';
             }
-            if (showNotification) {
-                showToast('Zen Mode active — Full screen immersion (F11 / Esc to exit)', 'info');
-            }
         } else {
             if (layout) layout.classList.remove('zen-mode');
-            if (btnFloatExit) btnFloatExit.style.display = 'none';
             if (btnZen) {
                 btnZen.classList.remove('active');
                 btnZen.title = 'Toggle Fullscreen Zen Mode (F11)';
-            }
-            if (showNotification) {
-                showToast('Exited Zen Mode', 'info');
             }
         }
 
@@ -369,25 +361,19 @@ function setupEventHandlers() {
         } catch (_) {}
     };
 
-    const toggleZenMode = () => setZenMode(!state.isZenMode, true);
-    const exitZenMode = () => setZenMode(false, true);
+    const toggleZenMode = () => setZenMode(!state.isZenMode);
+    const exitZenMode = () => setZenMode(false);
 
     document.getElementById('btnToggleZen')?.addEventListener('click', toggleZenMode);
-    document.getElementById('btnFloatingExitZen')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        exitZenMode();
-    });
 
-    // Keyboard Shortcuts (F11 to toggle, Esc to exit — removed 'Z' key so typing never triggers Zen Mode)
+    // Keyboard Shortcuts (F11 to toggle, Esc to exit)
     window.addEventListener('keydown', (e) => {
         if (e.key === 'F11') {
             e.preventDefault();
             toggleZenMode();
         } else if (e.key === 'Escape') {
             const layout = document.querySelector('.app-layout');
-            const btnFloatExit = document.getElementById('btnFloatingExitZen');
-            if (state.isZenMode || layout?.classList.contains('zen-mode') || (btnFloatExit && btnFloatExit.style.display !== 'none')) {
+            if (state.isZenMode || layout?.classList.contains('zen-mode')) {
                 e.preventDefault();
                 exitZenMode();
             }
@@ -961,27 +947,160 @@ async function refreshAddons() {
     }
 }
 
+const ADDON_SECTION_ORDER = [
+    '2D Studio Characters',
+    'Gamemodes',
+    'NPCs & NextBots',
+    'Weapons',
+    'Vehicles',
+    'Models & Playermodels',
+    'Effects & Realism',
+    'Tools & Utilities',
+    'Maps & NavMeshes'
+];
+
+const ADDON_SECTION_META = {
+    '2D Studio Characters': { icon: '🎨', chipLabel: '2D Studio' },
+    'Gamemodes':            { icon: '🎮', chipLabel: 'Gamemodes' },
+    'NPCs & NextBots':      { icon: '🤖', chipLabel: 'NPCs & NextBots' },
+    'Weapons':              { icon: '🔫', chipLabel: 'Weapons' },
+    'Vehicles':             { icon: '🚗', chipLabel: 'Vehicles' },
+    'Models & Playermodels':{ icon: '🧍', chipLabel: 'Models & Props' },
+    'Effects & Realism':    { icon: '✨', chipLabel: 'Effects & Realism' },
+    'Tools & Utilities':    { icon: '🛠️', chipLabel: 'Tools & Utilities' },
+    'Maps & NavMeshes':     { icon: '🗺️', chipLabel: 'Maps & NavMeshes' }
+};
+
+function updateAddonFilterBarUI() {
+    document.querySelectorAll('#addonCategoryFilters .chip').forEach(chip => {
+        const filterVal = chip.getAttribute('data-filter');
+        if (filterVal === 'all') {
+            const enabledAll = state.addons.filter(a => a.isEnabled).length;
+            chip.textContent = `All Sections (${enabledAll}/${state.addons.length})`;
+        } else {
+            const meta = ADDON_SECTION_META[filterVal] || { icon: '📦', chipLabel: filterVal };
+            const inSec = state.addons.filter(a => a.category === filterVal);
+            const enabledSec = inSec.filter(a => a.isEnabled).length;
+            chip.textContent = `${meta.icon} ${meta.chipLabel} (${enabledSec}/${inSec.length})`;
+        }
+    });
+
+    const btnEnable = document.getElementById('btnEnableAllAddons');
+    const btnDisable = document.getElementById('btnDisableAllAddons');
+    if (btnEnable && btnDisable) {
+        if (state.addonFilter === 'all') {
+            btnEnable.textContent = 'Enable All';
+            btnDisable.textContent = 'Disable All';
+        } else {
+            const meta = ADDON_SECTION_META[state.addonFilter] || { chipLabel: state.addonFilter };
+            btnEnable.textContent = `Enable ${meta.chipLabel}`;
+            btnDisable.textContent = `Disable ${meta.chipLabel}`;
+        }
+    }
+}
+
+function createAddonRowElement(addon, onToggled) {
+    const row = document.createElement('div');
+    row.className = `addon-row ${addon.isEnabled ? '' : 'disabled'}`;
+
+    const thumbHtml = addon.previewUrl
+        ? `<img src="${addon.previewUrl}" alt="${addon.name}" onerror="this.parentElement.innerHTML='📦'">`
+        : `<span>📦</span>`;
+
+    row.innerHTML = `
+        <label class="toggle-switch">
+            <input type="checkbox" ${addon.isEnabled ? 'checked' : ''} data-file="${addon.filePath}">
+            <span class="toggle-slider"></span>
+        </label>
+        <div class="addon-thumb">${thumbHtml}</div>
+        <div class="addon-info">
+            <div class="addon-title" title="${addon.name}">${addon.name}</div>
+            <div class="addon-details">
+                <span class="addon-tag">${addon.category}</span>
+                <span>${formatBytes(addon.fileSize)}</span>
+                <span>By: ${addon.author || 'Unknown'}</span>
+                ${addon.filesCount > 0 ? `<span>${addon.filesCount} internal files</span>` : ''}
+            </div>
+        </div>
+        <div class="addon-actions">
+            ${!addon.isFolder ? `
+            <button class="btn btn-secondary btn-sm" data-action="inspect" title="Inspect GMA internal files">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <span>Inspect</span>
+            </button>` : ''}
+            <button class="btn btn-secondary btn-icon" data-action="reveal" title="Reveal in File Explorer">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            </button>
+            ${addon.workshopId ? `
+            <button class="btn btn-secondary btn-icon" data-action="steam" title="Open in Steam Client">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+            </button>` : ''}
+        </div>
+    `;
+
+    // Toggle switch
+    const toggleInput = row.querySelector('.toggle-switch input');
+    toggleInput.addEventListener('change', async (e) => {
+        const enable = e.target.checked;
+        try {
+            const res = await window.api.toggleAddon(addon.filePath, enable);
+            addon.filePath = res.newPath;
+            addon.isEnabled = enable;
+            row.classList.toggle('disabled', !enable);
+            updateAddonFilterBarUI();
+            if (typeof onToggled === 'function') onToggled();
+            showToast(`${addon.name} ${enable ? 'enabled' : 'disabled'}`, 'info');
+            await refreshMaps();
+        } catch (err) {
+            e.target.checked = !enable;
+            showToast('Toggle failed: ' + err.message, 'error');
+        }
+    });
+
+    // Inspect button
+    const btnInspect = row.querySelector('[data-action="inspect"]');
+    if (btnInspect) {
+        btnInspect.addEventListener('click', () => openGmaInspector(addon));
+    }
+
+    // Reveal button
+    row.querySelector('[data-action="reveal"]').addEventListener('click', () => {
+        window.api.revealInExplorer(addon.filePath);
+    });
+
+    // Steam client button
+    const btnSteam = row.querySelector('[data-action="steam"]');
+    if (btnSteam) {
+        btnSteam.addEventListener('click', () => {
+            window.api.openSteamClient(addon.workshopId);
+        });
+    }
+
+    return row;
+}
+
 function renderAddons() {
     const list = document.getElementById('addonsList');
     list.innerHTML = '';
 
+    updateAddonFilterBarUI();
+
     let filtered = state.addons.filter(addon => {
-        if (state.addonFilter !== 'all') {
-            if (state.addonFilter === 'Map' && addon.category !== 'Map') return false;
-            if (state.addonFilter !== 'Map' && addon.category !== state.addonFilter) return false;
+        if (state.addonFilter !== 'all' && addon.category !== state.addonFilter) {
+            return false;
         }
 
         if (state.searchQuery) {
             const q = state.searchQuery;
-            const matchName = addon.name.toLowerCase().includes(q);
-            const matchAuthor = addon.author.toLowerCase().includes(q);
-            const matchCat = addon.category.toLowerCase().includes(q);
+            const matchName = (addon.name || '').toLowerCase().includes(q);
+            const matchAuthor = (addon.author || '').toLowerCase().includes(q);
+            const matchCat = (addon.category || '').toLowerCase().includes(q);
             if (!matchName && !matchAuthor && !matchCat) return false;
         }
         return true;
     });
 
-    // Sorting
+    // Sorting within each section
     filtered.sort((a, b) => {
         if (state.addonSort === 'name') return a.name.localeCompare(b.name);
         if (state.addonSort === 'size_desc') return b.fileSize - a.fileSize;
@@ -995,106 +1114,148 @@ function renderAddons() {
             <div class="empty-state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                 <h3>No addons found</h3>
-                <p>Try modifying your search or selecting a different category.</p>
+                <p>Try modifying your search or selecting a different section.</p>
             </div>
         `;
         return;
     }
 
-    filtered.forEach(addon => {
-        const row = document.createElement('div');
-        row.className = `addon-row ${addon.isEnabled ? '' : 'disabled'}`;
+    // Group filtered addons by section
+    const groups = new Map();
+    for (const sec of ADDON_SECTION_ORDER) {
+        groups.set(sec, []);
+    }
+    for (const addon of filtered) {
+        const sec = addon.category || 'Models & Playermodels';
+        if (!groups.has(sec)) groups.set(sec, []);
+        groups.get(sec).push(addon);
+    }
 
-        const thumbHtml = addon.previewUrl
-            ? `<img src="${addon.previewUrl}" alt="${addon.name}" onerror="this.parentElement.innerHTML='📦'">`
-            : `<span>📦</span>`;
+    for (const [sectionName, sectionAddons] of groups.entries()) {
+        if (sectionAddons.length === 0) continue;
 
-        row.innerHTML = `
-            <label class="toggle-switch">
-                <input type="checkbox" ${addon.isEnabled ? 'checked' : ''} data-file="${addon.filePath}">
-                <span class="toggle-slider"></span>
-            </label>
-            <div class="addon-thumb">${thumbHtml}</div>
-            <div class="addon-info">
-                <div class="addon-title" title="${addon.name}">${addon.name}</div>
-                <div class="addon-details">
-                    <span class="addon-tag">${addon.category}</span>
-                    <span>${formatBytes(addon.fileSize)}</span>
-                    <span>By: ${addon.author || 'Unknown'}</span>
-                    ${addon.filesCount > 0 ? `<span>${addon.filesCount} internal files</span>` : ''}
+        const meta = ADDON_SECTION_META[sectionName] || { icon: '📦', chipLabel: sectionName };
+        const isCollapsed = Boolean(state.collapsedAddonSections[sectionName]);
+        const sectionEl = document.createElement('div');
+        sectionEl.className = `addon-section-group ${isCollapsed ? 'collapsed' : ''}`;
+
+        const totalBytes = sectionAddons.reduce((sum, a) => sum + (a.fileSize || 0), 0);
+
+        const headerEl = document.createElement('div');
+        headerEl.className = 'addon-section-header';
+
+        const updateSectionStats = () => {
+            const enabledCount = sectionAddons.filter(a => a.isEnabled).length;
+            const badgeEl = headerEl.querySelector('.addon-section-badge');
+            if (badgeEl) {
+                badgeEl.textContent = `${enabledCount} / ${sectionAddons.length} Enabled`;
+                badgeEl.classList.toggle('none-enabled', enabledCount === 0);
+            }
+            const btnEn = headerEl.querySelector('[data-sec-action="enable"]');
+            const btnDis = headerEl.querySelector('[data-sec-action="disable"]');
+            if (btnEn) btnEn.disabled = enabledCount === sectionAddons.length;
+            if (btnDis) btnDis.disabled = enabledCount === 0;
+        };
+
+        const initialEnabled = sectionAddons.filter(a => a.isEnabled).length;
+
+        headerEl.innerHTML = `
+            <div class="addon-section-left" title="Click to expand/collapse ${sectionName}">
+                <span class="addon-section-chevron">▼</span>
+                <div class="addon-section-title">
+                    <span>${meta.icon}</span>
+                    <span>${sectionName}</span>
                 </div>
+                <span class="addon-section-badge ${initialEnabled === 0 ? 'none-enabled' : ''}">${initialEnabled} / ${sectionAddons.length} Enabled</span>
+                <span class="addon-section-size">${formatBytes(totalBytes)}</span>
             </div>
-            <div class="addon-actions">
-                ${!addon.isFolder ? `
-                <button class="btn btn-secondary btn-sm" data-action="inspect" title="Inspect GMA internal files">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <span>Inspect</span>
-                </button>` : ''}
-                <button class="btn btn-secondary btn-icon" data-action="reveal" title="Reveal in File Explorer">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <div class="addon-section-actions">
+                <button class="btn btn-secondary btn-sm" data-sec-action="enable" ${initialEnabled === sectionAddons.length ? 'disabled' : ''} title="Enable all ${sectionAddons.length} addons in ${sectionName}">
+                    ✓ Enable Section
                 </button>
-                ${addon.workshopId ? `
-                <button class="btn btn-secondary btn-icon" data-action="steam" title="Open in Steam Client">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
-                </button>` : ''}
+                <button class="btn btn-secondary btn-sm" data-sec-action="disable" ${initialEnabled === 0 ? 'disabled' : ''} title="Disable all ${sectionAddons.length} addons in ${sectionName}">
+                    ✕ Disable Section
+                </button>
             </div>
         `;
 
-        // Toggle switch
-        const toggleInput = row.querySelector('.toggle-switch input');
-        toggleInput.addEventListener('change', async (e) => {
-            const enable = e.target.checked;
-            try {
-                const res = await window.api.toggleAddon(addon.filePath, enable);
-                addon.filePath = res.newPath;
-                addon.isEnabled = enable;
-                row.classList.toggle('disabled', !enable);
-                showToast(`${addon.name} ${enable ? 'enabled' : 'disabled'}`, 'info');
-                await refreshMaps();
-            } catch (err) {
-                e.target.checked = !enable;
-                showToast('Toggle failed: ' + err.message, 'error');
+        headerEl.addEventListener('click', (e) => {
+            if (e.target.closest('.addon-section-actions')) return;
+            const nowCollapsed = !sectionEl.classList.contains('collapsed');
+            sectionEl.classList.toggle('collapsed', nowCollapsed);
+            state.collapsedAddonSections[sectionName] = nowCollapsed;
+        });
+
+        headerEl.querySelector('[data-sec-action="enable"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            bulkToggleSectionAddons(sectionAddons, true, sectionName);
+        });
+
+        headerEl.querySelector('[data-sec-action="disable"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            bulkToggleSectionAddons(sectionAddons, false, sectionName);
+        });
+
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'addon-section-body';
+
+        for (const addon of sectionAddons) {
+            bodyEl.appendChild(createAddonRowElement(addon, updateSectionStats));
+        }
+
+        sectionEl.appendChild(headerEl);
+        sectionEl.appendChild(bodyEl);
+        list.appendChild(sectionEl);
+    }
+}
+
+async function bulkToggleSectionAddons(addonsSubset, enable, label = 'Selected') {
+    const toChange = addonsSubset.filter(a => a.isEnabled !== enable);
+    if (toChange.length === 0) {
+        showToast(`${label}: all addons are already ${enable ? 'enabled' : 'disabled'}.`, 'info');
+        return;
+    }
+
+    showToast(`${enable ? 'Enabling' : 'Disabling'} ${toChange.length} addons in ${label}...`, 'info');
+    try {
+        const filePaths = toChange.map(a => a.filePath);
+        if (window.api.bulkToggleAddons) {
+            await window.api.bulkToggleAddons(filePaths, enable);
+        } else {
+            for (const addon of toChange) {
+                await window.api.toggleAddon(addon.filePath, enable);
             }
-        });
-
-        // Inspect button
-        const btnInspect = row.querySelector('[data-action="inspect"]');
-        if (btnInspect) {
-            btnInspect.addEventListener('click', () => openGmaInspector(addon));
         }
-
-        // Reveal button
-        row.querySelector('[data-action="reveal"]').addEventListener('click', () => {
-            window.api.revealInExplorer(addon.filePath);
-        });
-
-        // Steam client button
-        const btnSteam = row.querySelector('[data-action="steam"]');
-        if (btnSteam) {
-            btnSteam.addEventListener('click', () => {
-                window.api.openSteamClient(addon.workshopId);
-            });
-        }
-
-        list.appendChild(row);
-    });
+        await refreshAddons();
+        await refreshMaps();
+        showToast(`${label}: ${toChange.length} addons ${enable ? 'enabled' : 'disabled'}!`, 'success');
+    } catch (err) {
+        showToast(`Failed to toggle ${label}: ` + err.message, 'error');
+    }
 }
 
 async function bulkToggleAddons(enable) {
+    // If a specific section chip is selected, only toggle that section
+    if (state.addonFilter !== 'all') {
+        const sectionSubset = state.addons.filter(a => a.category === state.addonFilter);
+        return bulkToggleSectionAddons(sectionSubset, enable, state.addonFilter);
+    }
+
     const toChange = state.addons.filter(a => a.isEnabled !== enable);
     if (toChange.length === 0) return;
 
-    showToast(`${enable ? 'Enabling' : 'Disabling'} ${toChange.length} addons...`, 'info');
-    for (const addon of toChange) {
-        try {
-            const res = await window.api.toggleAddon(addon.filePath, enable);
-            addon.filePath = res.newPath;
-            addon.isEnabled = enable;
-        } catch (_) {}
+    if (enable && toChange.length > 50) {
+        const totalSize = state.addons.reduce((sum, a) => sum + (a.fileSize || 0), 0);
+        const ok = confirm(
+            `Enable ALL ${state.addons.length} addons (${formatBytes(totalSize)}) at once?\n\n` +
+            `Tip: Loading every addon simultaneously can cause long Garry's Mod startup times or graphics lag. ` +
+            `You can use the "✓ Enable Section" buttons on individual sections (like Gamemodes, NPCs & NextBots, or Weapons) for peak graphics performance.\n\n` +
+            `Click OK to enable all anyway, or Cancel to choose specific sections.`
+        );
+        if (!ok) return;
     }
-    await refreshAddons();
-    await refreshMaps();
-    showToast(`All addons ${enable ? 'enabled' : 'disabled'}!`, 'success');
+
+    return bulkToggleSectionAddons(state.addons, enable, 'All Sections');
 }
 
 // ---------------- GMA INSPECTOR MODAL ----------------

@@ -1342,41 +1342,109 @@ body {
     }
 }
 
-.btn-exit-zen {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 999;
-    display: none;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 22px;
-    background: linear-gradient(135deg, rgba(14, 165, 233, 0.95), rgba(6, 182, 212, 0.95));
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    border-radius: var(--radius-full);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
-    transition: all 0.25s ease;
-}
-
-.btn-exit-zen:hover {
-    transform: translateX(-50%) translateY(-2px);
-    box-shadow: 0 10px 30px rgba(14, 165, 233, 0.6);
-}
-
-.app-layout.zen-mode .btn-exit-zen {
-    display: inline-flex;
-}
-
 #btnToggleZen.active {
     background-color: rgba(14, 165, 233, 0.25);
     border-color: var(--accent-blue);
     color: var(--accent-blue-hover);
+}
+
+/* --- ADDON SECTION GROUPS --- */
+.addon-section-group {
+    background: rgba(18, 24, 36, 0.65);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    margin-bottom: 18px;
+    overflow: hidden;
+    transition: border-color 0.2s ease;
+}
+
+.addon-section-group:hover {
+    border-color: rgba(56, 189, 248, 0.3);
+}
+
+.addon-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 13px 18px;
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    user-select: none;
+}
+
+.addon-section-group.collapsed .addon-section-header {
+    border-bottom: none;
+}
+
+.addon-section-group.collapsed .addon-section-body {
+    display: none;
+}
+
+.addon-section-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.addon-section-chevron {
+    color: var(--text-muted);
+    font-size: 12px;
+    transition: transform 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+}
+
+.addon-section-group.collapsed .addon-section-chevron {
+    transform: rotate(-90deg);
+}
+
+.addon-section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.addon-section-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: var(--radius-full);
+    background: rgba(14, 165, 233, 0.14);
+    border: 1px solid rgba(14, 165, 233, 0.32);
+    color: #38bdf8;
+}
+
+.addon-section-badge.none-enabled {
+    background: rgba(148, 163, 184, 0.12);
+    border-color: rgba(148, 163, 184, 0.25);
+    color: var(--text-muted);
+}
+
+.addon-section-size {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.addon-section-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.addon-section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
 }
 
 /* --- ADDON DOCTOR & DIAGNOSTICS --- */

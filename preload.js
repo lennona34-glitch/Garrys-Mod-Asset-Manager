@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
     // Addons
     scanAddons: () => ipcRenderer.invoke('scan-addons'),
     toggleAddon: (filePath, enable) => ipcRenderer.invoke('toggle-addon', { filePath, enable }),
+    bulkToggleAddons: (filePaths, enable) => ipcRenderer.invoke('bulk-toggle-addons', { filePaths, enable }),
     inspectGma: (filePath) => ipcRenderer.invoke('inspect-gma', filePath),
     unpackAddon: (gmaFilePath, customOutputDir) => ipcRenderer.invoke('unpack-addon', { gmaFilePath, customOutputDir }),
     packAddon: (folderPath, outGmaPath) => ipcRenderer.invoke('pack-addon', { folderPath, outGmaPath }),
