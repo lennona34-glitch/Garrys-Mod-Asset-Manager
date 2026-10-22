@@ -24,29 +24,35 @@ A modern, high-performance desktop application built to inspect, diagnose, optim
   - **HUD Popups**: Center-screen broadcast and bottom-right green notifications confirm that Nextbots and NPCs can now navigate the map.
   - **Desktop App Notification & Live Badge Flip**: The desktop app watches the filesystem in real time, alerts you when the `.nav` file is finalized on disk, and flips the map badge from red to green.
 
-### 3. 🩺 Addon Doctor & Diagnostics
+### 3. 🎨 2D Character & NextBot Asset Studio
+- **Beginner-Friendly Modding**: Pick any downloaded 2D character/NextBot addon (or start from scratch), swap in your own photo, zoom/pan/rotate (`90°` steps) to fit, and customize movement speed, jump behavior, and health.
+- **Smart Cutout & Visual Filters**: 1-click **Auto Remove Background** (magic wand corner flood-fill + feathering), **Face Oval / Circle Cutout**, and **Dramatic Black & White / High-Contrast Noir** filters.
+- **Built-in Voicemod & Chase Audio Studio**: Swap in custom chase music, restore default or silent audio, or record your own microphone straight in the app with real-time voice effects (**Monster / Demon**, **Robot**, **Chipmunk**, **Megaphone / Radio**, **Haunted Echo**).
+- **Non-Overlapping Audio Lifecycle**: Automatically stops chase loops on entity removal/cleanup or when spawning multiple copies so tracks never stack over each other.
+- **1-Click Install & Steam Workshop Publishing**: Save directly into `garrysmod/addons` for instant local play or package and publish to Steam Workshop.
+
+### 4. 📦 9-Section Assets & Addons Manager
+- **Smart 9-Category Classification**: Automatically organizes all installed `.gma` and legacy `.bin` Workshop packages plus local studio creations into collapsible sections:
+  - **🎨 2D Studio Characters**, **🎮 Gamemodes**, **🤖 NPCs & NextBots**, **🔫 Weapons**, **🚗 Vehicles**, **🧍 Models & Playermodels**, **✨ Effects & Realism**, **🛠️ Tools & Utilities**, and **🗺️ Maps & NavMeshes**.
+- **Per-Section Enable / Disable**: Enable or disable an entire section (e.g., just Weapons or just NPCs) in a single atomic `addonnomount.txt` write—keeping Garry's Mod boot times fast and graphics running at full performance without loading hundreds of unused addons at once.
+- **Pure JS GMA Binary Parser & GMAD Unpacker**: Inspect internal files, unpack `.gma` archives, or pack folders into `.gma` format.
+
+### 5. 🌐 Host & Join Private / Local Multiplayer Hub
+- **1-Click Private Server Hosting**: Launch a local LAN or Friends-Only Steam P2P (`+p2p_enabled 1`) game with custom map, gamemode, max players, and server password.
+- **UDP LAN Server Scanner**: Automatically discovers active Garry's Mod servers on your local network via Valve `A2S_INFO` queries for 1-click joining.
+
+### 6. 🎮 Wireless Controller & Gamepad Tuning
+- **Zero-Drift Deadzone & Sensitivity Profiles**: Tune analog stick deadzones, turn speed, aim assist, and trigger behavior (`arc9_cruelty_reload 0` to prevent accidental left-trigger stutter) with automatic persistence to `autoexec.cfg`.
+
+### 7. 🩺 Addon Doctor & Diagnostics
 - **Texture & Content Detection**: Scans for Counter-Strike: Source (CS:S) texture mounts and workshop fix packs to resolve purple checkerboard textures and red ERROR models.
-- **Addon Conflict Resolver**: Detects duplicate packs and entity collisions with 1-click safe resolution (`.disabled` state preserves files with instant undo).
+- **Addon Conflict & Crash Resolver**: Detects duplicate packs, entity collisions, and known Lua hook conflicts (such as GCAL vs. VManip) with 1-click safe resolution.
 - **Base Framework Detection**: Detects missing weapon and vehicle frameworks (TFA Base, ARC9, simfphys, VJ Base, DrGBase) with 1-click Steam subscriptions.
-- **Curated Asset Hub**: Direct recommendations and 1-click Steam Workshop links for weapons, cars, and SNPCs matching your installed frameworks.
 
-### 4. 📦 Assets & Addons Manager
-- **Complete Mod Inventory**: Scans and catalogs all installed workshop and legacy addons.
-- **Instant Enable / Disable Toggle**: Toggle individual addons or use bulk controls. Works by cleanly renaming to `.gma.disabled` so GMod skips loading without un-subscribing.
-- **Pure JS GMA Binary Parser**: Fast custom parser reads internal file hierarchies, file paths, CRCs, and exact byte sizes without requiring full extraction.
-- **GMAD Unpacker**: One-click extraction using GMod's bundled `bin/gmad.exe` into editable folders.
-- **Pack Folder to GMA**: Create custom `.gma` archives from any folder.
-
-### 5. ⚡ Presets & Loadout Switcher
-- Save your active addon configurations into named presets (e.g., "Minimal Vanilla", "TTT Night", "Sandbox Props & Build", "Horror / Nextbots").
-- Switch profiles in one click before booting Garry's Mod.
-
-### 6. 🌐 Native Steam Desktop Client Integration
-- Bypasses browser login walls by routing all Steam Workshop items, collections, bases, and asset queries directly into your logged-in desktop Steam client (`steam://openurl/...`).
-
-### 7. 🧹 Storage & Cache Cleaner
-- Analyzes disk space consumed by addons, maps, and multiplayer server cache (`garrysmod/download/`).
-- One-click safe cache cleaner to reclaim gigabytes of SSD space without touching subscribed mods.
+### 8. ⚡ Presets, Native Steam Integration & Cache Cleaner
+- **Loadout Presets**: Save and switch active addon profiles in one click.
+- **Native Steam Client Routing**: Opens Workshop items and uploads directly inside your logged-in Steam desktop client (`steam://openurl/...`).
+- **Storage & Cache Cleaner**: Reclaim disk space from `garrysmod/download/` and unused caches safely.
 
 ---
 
