@@ -73,6 +73,14 @@ ipcMain.handle('toggle-fullscreen', async () => {
     return false;
 });
 
+ipcMain.handle('set-fullscreen', async (event, enable) => {
+    if (mainWindow) {
+        mainWindow.setFullScreen(Boolean(enable));
+        return mainWindow.isFullScreen();
+    }
+    return false;
+});
+
 ipcMain.handle('is-fullscreen', async () => {
     return mainWindow ? mainWindow.isFullScreen() : false;
 });

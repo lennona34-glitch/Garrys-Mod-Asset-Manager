@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
     setCustomGmodPath: (path) => ipcRenderer.invoke('set-custom-gmod-path', path),
     selectFolderDialog: () => ipcRenderer.invoke('select-folder-dialog'),
     toggleFullScreen: () => ipcRenderer.invoke('toggle-fullscreen'),
+    setFullScreen: (enable) => ipcRenderer.invoke('set-fullscreen', enable),
     isFullScreen: () => ipcRenderer.invoke('is-fullscreen'),
     
     // Maps & Private / Local Multiplayer

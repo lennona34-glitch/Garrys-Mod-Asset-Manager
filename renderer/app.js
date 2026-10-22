@@ -332,43 +332,65 @@ function setupEventHandlers() {
     }
 
     // Zen Mode Fullscreen
-    const toggleZenMode = async () => {
-        state.isZenMode = !state.isZenMode;
-        await window.api.toggleFullScreen();
+    const setZenMode = async (enable, showNotification = true) => {
+        state.isZenMode = Boolean(enable);
         const layout = document.querySelector('.app-layout');
         const btnZen = document.getElementById('btnToggleZen');
+        const btnFloatExit = document.getElementById('btnFloatingExitZen');
 
         if (state.isZenMode) {
-            layout.classList.add('zen-mode');
+            if (layout) layout.classList.add('zen-mode');
+            if (btnFloatExit) btnFloatExit.style.display = 'inline-flex';
             if (btnZen) {
                 btnZen.classList.add('active');
                 btnZen.title = 'Exit Fullscreen Zen Mode (F11 / Esc)';
             }
-            showToast('Zen Mode active — Full screen immersion (F11 / Esc to exit)', 'info');
+            if (showNotification) {
+                showToast('Zen Mode active — Full screen immersion (F11 / Esc to exit)', 'info');
+            }
         } else {
-            layout.classList.remove('zen-mode');
+            if (layout) layout.classList.remove('zen-mode');
+            if (btnFloatExit) btnFloatExit.style.display = 'none';
             if (btnZen) {
                 btnZen.classList.remove('active');
                 btnZen.title = 'Toggle Fullscreen Zen Mode (F11)';
             }
-            showToast('Exited Zen Mode', 'info');
+            if (showNotification) {
+                showToast('Exited Zen Mode', 'info');
+            }
         }
+
+        try {
+            if (window.api.setFullScreen) {
+                await window.api.setFullScreen(state.isZenMode);
+            } else {
+                await window.api.toggleFullScreen();
+            }
+        } catch (_) {}
     };
 
-    document.getElementById('btnToggleZen').addEventListener('click', toggleZenMode);
-    document.getElementById('btnFloatingExitZen').addEventListener('click', toggleZenMode);
+    const toggleZenMode = () => setZenMode(!state.isZenMode, true);
+    const exitZenMode = () => setZenMode(false, true);
 
-    // Keyboard Shortcuts (F11, Z, Esc)
+    document.getElementById('btnToggleZen')?.addEventListener('click', toggleZenMode);
+    document.getElementById('btnFloatingExitZen')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        exitZenMode();
+    });
+
+    // Keyboard Shortcuts (F11 to toggle, Esc to exit — removed 'Z' key so typing never triggers Zen Mode)
     window.addEventListener('keydown', (e) => {
         if (e.key === 'F11') {
             e.preventDefault();
             toggleZenMode();
-        } else if (e.key === 'Escape' && state.isZenMode) {
-            e.preventDefault();
-            toggleZenMode();
-        } else if ((e.key === 'z' || e.key === 'Z') && !e.target.matches('input, textarea')) {
-            e.preventDefault();
-            toggleZenMode();
+        } else if (e.key === 'Escape') {
+            const layout = document.querySelector('.app-layout');
+            const btnFloatExit = document.getElementById('btnFloatingExitZen');
+            if (state.isZenMode || layout?.classList.contains('zen-mode') || (btnFloatExit && btnFloatExit.style.display !== 'none')) {
+                e.preventDefault();
+                exitZenMode();
+            }
         }
     });
 
@@ -2485,6 +2507,8 @@ const studioState = {
     zoom: 1.0,            // 0.2 to 3.5
     panX: 0,
     panY: 0,
+    rotation: 0,          // 0, 90, 180, 270 degrees
+    flipH: false,         // Horizontal mirror flip
     cropShape: 'square',  // 'square' | 'face_oval' | 'soft_vignette' | 'circle' | 'rounded'
     removeBg: false,
     bgTolerance: 38,
@@ -2495,7 +2519,7 @@ const studioState = {
     isDragging: false,
     dragStartX: 0,
     dragStartY: 0,
-    soundSwaps: {},       // { [relPath]: { filePath, fileName, fileSize } }
+    soundSwaps: {},       // { [relPath]: { mode?: 'custom'|'default'|'none', filePath, fileName, fileSize } }
     activeAudio: null,
     activeAudioBtn: null
 };
@@ -2611,12 +2635,13 @@ async function selectStudioCharacter(charId) {
         const inpName = document.getElementById('inpStudioCharName');
         const selMode = document.getElementById('selStudioSaveMode');
         if (inpName) {
+            const cleanBaseName = (loaded.displayName || 'My Custom 2D Nextbot').replace(/(\s*\(Remix\))+$/i, '').trim();
             inpName.value = loaded.isNewTemplate
                 ? 'My Custom 2D Nextbot'
-                : `${loaded.displayName} (Remix)`;
+                : (loaded.isCustomRemix ? loaded.displayName : `${cleanBaseName} (Remix)`);
         }
         if (selMode) {
-            selMode.value = 'new_character';
+            selMode.value = loaded.isCustomRemix ? 'override' : 'new_character';
             selMode.disabled = Boolean(loaded.isNewTemplate);
         }
 
@@ -2669,12 +2694,24 @@ async function selectStudioCharacter(charId) {
     }
 }
 
+function getStudioEffectivePhotoDims() {
+    if (!studioState.photoImg) return { w: 512, h: 512 };
+    const img = studioState.photoImg;
+    const isRotated90 = (Math.abs(studioState.rotation || 0) % 180) !== 0;
+    return {
+        w: isRotated90 ? img.naturalHeight : img.naturalWidth,
+        h: isRotated90 ? img.naturalWidth : img.naturalHeight
+    };
+}
+
 function loadPhotoIntoStudioCanvas(dataUrl, initialFit = 'contain') {
     const img = new Image();
     img.onload = () => {
         studioState.photoImg = img;
         studioState.panX = 0;
         studioState.panY = 0;
+        studioState.rotation = 0;
+        studioState.flipH = false;
 
         const dimLabel = document.getElementById('studioPhotoDimensionsLabel');
         if (dimLabel) {
@@ -2692,8 +2729,8 @@ function loadPhotoIntoStudioCanvas(dataUrl, initialFit = 'contain') {
 
 function fitStudioPhotoContain() {
     if (!studioState.photoImg) return;
-    const img = studioState.photoImg;
-    const scale = Math.min(512 / img.naturalWidth, 512 / img.naturalHeight);
+    const { w, h } = getStudioEffectivePhotoDims();
+    const scale = Math.min(512 / w, 512 / h);
     studioState.zoom = scale;
     studioState.panX = 0;
     studioState.panY = 0;
@@ -2703,8 +2740,8 @@ function fitStudioPhotoContain() {
 
 function fitStudioPhotoCover() {
     if (!studioState.photoImg) return;
-    const img = studioState.photoImg;
-    const scale = Math.max(512 / img.naturalWidth, 512 / img.naturalHeight);
+    const { w, h } = getStudioEffectivePhotoDims();
+    const scale = Math.max(512 / w, 512 / h);
     studioState.zoom = scale;
     studioState.panX = 0;
     studioState.panY = 0;
@@ -2720,7 +2757,8 @@ function syncStudioZoomUI() {
         if (lblZoom) lblZoom.textContent = '100%';
         return;
     }
-    const baseContain = Math.min(512 / studioState.photoImg.naturalWidth, 512 / studioState.photoImg.naturalHeight);
+    const { w, h } = getStudioEffectivePhotoDims();
+    const baseContain = Math.min(512 / w, 512 / h);
     const pct = Math.round((studioState.zoom / baseContain) * 100);
     const clampedPct = Math.max(20, Math.min(350, pct));
     if (rngZoom) rngZoom.value = clampedPct;
@@ -2905,10 +2943,23 @@ function drawStudioCanvas() {
 
     if (studioState.photoImg) {
         const img = studioState.photoImg;
-        const drawW = img.naturalWidth * studioState.zoom;
-        const drawH = img.naturalHeight * studioState.zoom;
-        const drawX = (512 - drawW) / 2 + studioState.panX;
-        const drawY = (512 - drawH) / 2 + studioState.panY;
+        const rawW = img.naturalWidth * studioState.zoom;
+        const rawH = img.naturalHeight * studioState.zoom;
+
+        const drawTransformedPhoto = (targetCtx) => {
+            targetCtx.save();
+            targetCtx.translate(256 + studioState.panX, 256 + studioState.panY);
+            if (studioState.rotation) {
+                targetCtx.rotate((studioState.rotation * Math.PI) / 180);
+            }
+            if (studioState.flipH) {
+                targetCtx.scale(-1, 1);
+            }
+            targetCtx.imageSmoothingEnabled = true;
+            targetCtx.imageSmoothingQuality = 'high';
+            targetCtx.drawImage(img, -rawW / 2, -rawH / 2, rawW, rawH);
+            targetCtx.restore();
+        };
 
         // Keep an unmasked copy for Magic Wand color sampling
         if (!studioState.rawOffCanvas) {
@@ -2918,9 +2969,7 @@ function drawStudioCanvas() {
         }
         const rawCtx = studioState.rawOffCanvas.getContext('2d');
         rawCtx.clearRect(0, 0, 512, 512);
-        rawCtx.imageSmoothingEnabled = true;
-        rawCtx.imageSmoothingQuality = 'high';
-        rawCtx.drawImage(img, drawX, drawY, drawW, drawH);
+        drawTransformedPhoto(rawCtx);
 
         ctx.save();
         if (studioState.cropShape === 'face_oval') {
@@ -2949,9 +2998,7 @@ function drawStudioCanvas() {
             ctx.clip();
         }
 
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        drawTransformedPhoto(ctx);
         ctx.restore();
 
         // Apply Background Removal, Soft Vignette, and Dramatic B&W Filters
@@ -2996,8 +3043,43 @@ function renderStudioSoundsList() {
 
     sounds.forEach(s => {
         const swapped = studioState.soundSwaps[s.relPath];
-        const hasAudioSource = Boolean(swapped || (s.hasFile && s.fullPath));
-        const activeFilePath = swapped ? swapped.filePath : s.fullPath;
+        const isMuted = swapped ? swapped.mode === 'none' : !s.hasFile;
+        const isRestoredDefault = Boolean(swapped && swapped.mode === 'default');
+        const isCustomSwap = Boolean(swapped && swapped.mode !== 'none' && swapped.mode !== 'default');
+
+        let activeFilePath = null;
+        if (swapped) {
+            activeFilePath = swapped.mode === 'none' ? null : swapped.filePath;
+        } else if (s.hasFile && s.fullPath) {
+            activeFilePath = s.fullPath;
+        }
+        const hasAudioSource = Boolean(activeFilePath);
+
+        let statusText = 'No audio selected yet';
+        let statusColor = '#94a3b8';
+        let rowBg = 'rgba(15, 23, 42, 0.55)';
+        let rowBorder = 'rgba(255, 255, 255, 0.07)';
+
+        if (isMuted) {
+            statusText = '🔇 No Track (Muted / Silent)';
+            statusColor = '#f87171';
+            rowBg = 'rgba(239, 68, 68, 0.09)';
+            rowBorder = 'rgba(239, 68, 68, 0.32)';
+        } else if (isRestoredDefault) {
+            statusText = `↺ Default Track (${swapped.fileName || 'Original'})`;
+            statusColor = '#38bdf8';
+            rowBg = 'rgba(56, 189, 248, 0.12)';
+            rowBorder = 'rgba(56, 189, 248, 0.38)';
+        } else if (isCustomSwap) {
+            statusText = `✓ ${swapped.fileName}`;
+            statusColor = '#34d399';
+            rowBg = 'rgba(52, 211, 153, 0.12)';
+            rowBorder = 'rgba(52, 211, 153, 0.4)';
+        } else if (s.hasFile) {
+            statusText = s.relPath;
+        }
+
+        const canRestoreDefault = Boolean(s.defaultFullPath || s.hasFile || swapped);
 
         const row = document.createElement('div');
         row.style.cssText = `
@@ -3007,8 +3089,8 @@ function renderStudioSoundsList() {
             gap: 8px;
             padding: 7px 10px;
             border-radius: 6px;
-            background: ${swapped ? 'rgba(52, 211, 153, 0.12)' : 'rgba(15, 23, 42, 0.55)'};
-            border: 1px solid ${swapped ? 'rgba(52, 211, 153, 0.4)' : 'rgba(255, 255, 255, 0.07)'};
+            background: ${rowBg};
+            border: 1px solid ${rowBorder};
         `;
 
         row.innerHTML = `
@@ -3016,22 +3098,29 @@ function renderStudioSoundsList() {
                 <div style="font-size: 12px; font-weight: 600; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                     ${s.label}
                 </div>
-                <div style="font-size: 11px; color: ${swapped ? '#34d399' : '#94a3b8'}; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    ${swapped ? `✓ ${swapped.fileName}` : (s.hasFile ? s.relPath : 'No audio selected yet')}
+                <div style="font-size: 11px; color: ${statusColor}; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    ${statusText}
                 </div>
             </div>
-            <div style="display: flex; gap: 5px; align-items: center; flex-shrink: 0;">
+            <div style="display: flex; gap: 4px; align-items: center; flex-shrink: 0; flex-wrap: wrap;">
                 ${hasAudioSource ? `
-                <button class="btn btn-secondary btn-xs btn-studio-play-audio" style="padding: 4px 7px; font-size: 10.5px;">▶ Play</button>
+                <button class="btn btn-secondary btn-xs btn-studio-play-audio" title="Preview this audio track" style="padding: 4px 6px; font-size: 10px;">▶ Play</button>
                 ` : ''}
-                <button class="btn btn-secondary btn-xs btn-studio-record-slot" title="Record custom voice / Voicemod FX for this slot" style="padding: 4px 7px; font-size: 10.5px; border-color: rgba(244, 63, 94, 0.4); color: #fda4af;">
+                <button class="btn btn-secondary btn-xs btn-studio-record-slot" title="Record custom voice / Voicemod FX for this slot" style="padding: 4px 6px; font-size: 10px; border-color: rgba(244, 63, 94, 0.4); color: #fda4af;">
                     🎙️ Mic
                 </button>
-                <button class="btn btn-primary btn-xs btn-studio-swap-audio" style="padding: 4px 8px; font-size: 10.5px;">
+                <button class="btn btn-primary btn-xs btn-studio-swap-audio" title="Choose a custom .mp3 / .wav / .ogg file" style="padding: 4px 7px; font-size: 10px;">
                     🎵 File
                 </button>
-                ${swapped ? `
-                <button class="btn btn-secondary btn-xs btn-studio-reset-audio" title="Revert to original sound" style="padding: 4px 6px; font-size: 10.5px;">↩</button>
+                ${canRestoreDefault ? `
+                <button class="btn btn-secondary btn-xs btn-studio-default-audio" title="Restore original default audio track for this slot" style="padding: 4px 6px; font-size: 10px; border-color: rgba(56, 189, 248, 0.38); color: #7dd3fc;">
+                    ↺ Default
+                </button>
+                ` : ''}
+                ${!isMuted ? `
+                <button class="btn btn-secondary btn-xs btn-studio-mute-audio" title="Set to No Track / Mute so this slot does not play any audio" style="padding: 4px 6px; font-size: 10px; border-color: rgba(248, 113, 113, 0.38); color: #fca5a5;">
+                    🔇 No Track
+                </button>
                 ` : ''}
             </div>
         `;
@@ -3079,18 +3168,42 @@ function renderStudioSoundsList() {
             stopStudioAudioPreview();
             const picked = await window.api.selectAudioDialog();
             if (picked && picked.filePath) {
-                studioState.soundSwaps[s.relPath] = picked;
+                studioState.soundSwaps[s.relPath] = { ...picked, mode: 'custom' };
                 renderStudioSoundsList();
                 showToast(`🎵 Loaded "${picked.fileName}" for ${s.label}!`, 'success');
             }
         });
 
-        const btnReset = row.querySelector('.btn-studio-reset-audio');
-        if (btnReset) {
-            btnReset.addEventListener('click', () => {
+        const btnDefault = row.querySelector('.btn-studio-default-audio');
+        if (btnDefault) {
+            btnDefault.addEventListener('click', () => {
                 stopStudioAudioPreview();
-                delete studioState.soundSwaps[s.relPath];
+                if (s.defaultFullPath) {
+                    studioState.soundSwaps[s.relPath] = {
+                        mode: 'default',
+                        filePath: s.defaultFullPath,
+                        fileName: s.defaultFileName || 'Default Track'
+                    };
+                    showToast(`↺ Restored default track (${s.defaultFileName || 'Original'}) for ${s.label}! Click Save to apply.`, 'info');
+                } else {
+                    delete studioState.soundSwaps[s.relPath];
+                    showToast(`↺ Reverted ${s.label} to current character track.`, 'info');
+                }
                 renderStudioSoundsList();
+            });
+        }
+
+        const btnMute = row.querySelector('.btn-studio-mute-audio');
+        if (btnMute) {
+            btnMute.addEventListener('click', () => {
+                stopStudioAudioPreview();
+                studioState.soundSwaps[s.relPath] = {
+                    mode: 'none',
+                    filePath: null,
+                    fileName: 'No Track (Muted)'
+                };
+                renderStudioSoundsList();
+                showToast(`🔇 Set "${s.label}" to No Track! Click "Save to My Garry's Mod" to apply.`, 'info');
             });
         }
 
@@ -3106,7 +3219,12 @@ function buildStudioSavePayload() {
 
     const soundSwapsMap = {};
     for (const [relPath, info] of Object.entries(studioState.soundSwaps)) {
-        if (info && info.filePath) {
+        if (!info) continue;
+        if (info.mode === 'none') {
+            soundSwapsMap[relPath] = '__NONE__';
+        } else if (info.mode === 'default') {
+            soundSwapsMap[relPath] = info.filePath || '__DEFAULT__';
+        } else if (info.filePath) {
             soundSwapsMap[relPath] = info.filePath;
         }
     }
@@ -3193,7 +3311,8 @@ function setupStudioControls() {
             if (!studioState.photoImg) return;
             e.preventDefault();
             const factor = e.deltaY < 0 ? 1.08 : 0.92;
-            const baseContain = Math.min(512 / studioState.photoImg.naturalWidth, 512 / studioState.photoImg.naturalHeight);
+            const { w, h } = getStudioEffectivePhotoDims();
+            const baseContain = Math.min(512 / w, 512 / h);
             const minZoom = baseContain * 0.2;
             const maxZoom = baseContain * 3.5;
             studioState.zoom = Math.max(minZoom, Math.min(maxZoom, studioState.zoom * factor));
@@ -3206,7 +3325,8 @@ function setupStudioControls() {
         rngZoom.addEventListener('input', () => {
             if (!studioState.photoImg) return;
             const pct = parseInt(rngZoom.value, 10) || 100;
-            const baseContain = Math.min(512 / studioState.photoImg.naturalWidth, 512 / studioState.photoImg.naturalHeight);
+            const { w, h } = getStudioEffectivePhotoDims();
+            const baseContain = Math.min(512 / w, 512 / h);
             studioState.zoom = baseContain * (pct / 100);
             const lblZoom = document.getElementById('lblStudioZoom');
             if (lblZoom) lblZoom.textContent = `${pct}%`;
@@ -3219,8 +3339,26 @@ function setupStudioControls() {
         if (picked && picked.dataUrl) {
             studioState.customBgColors = [];
             loadPhotoIntoStudioCanvas(picked.dataUrl, 'cover');
-            showToast(`🖼️ Switched photo to "${picked.fileName}"! Drag or scroll to adjust fit.`, 'success');
+            showToast(`🖼️ Switched photo to "${picked.fileName}"! Drag, rotate, or scroll to adjust fit.`, 'success');
         }
+    });
+
+    document.getElementById('btnStudioRotateLeft')?.addEventListener('click', () => {
+        if (!studioState.photoImg) return;
+        studioState.rotation = ((studioState.rotation || 0) + 270) % 360;
+        fitStudioPhotoContain();
+    });
+
+    document.getElementById('btnStudioRotateRight')?.addEventListener('click', () => {
+        if (!studioState.photoImg) return;
+        studioState.rotation = ((studioState.rotation || 0) + 90) % 360;
+        fitStudioPhotoContain();
+    });
+
+    document.getElementById('btnStudioFlipH')?.addEventListener('click', () => {
+        if (!studioState.photoImg) return;
+        studioState.flipH = !studioState.flipH;
+        drawStudioCanvas();
     });
 
     document.getElementById('btnStudioFitContain')?.addEventListener('click', () => fitStudioPhotoContain());

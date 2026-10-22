@@ -6,6 +6,9 @@ data/workshop_details_cache.json
 data/thumbnails/*.png
 !data/thumbnails/.gitkeep
 data/workshop_staging/
+data/studio_workspace/
+data/studio_cache/
+data/studio_recordings/
 
 # User and Environment
 .env

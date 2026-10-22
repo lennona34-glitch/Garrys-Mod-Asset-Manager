@@ -344,16 +344,20 @@ async function launchMap(gmodInfo, mapName, options = {}) {
         console.warn('Auto-extraction check failed for map:', mapName, e);
     }
 
-    const args = ['-condebug'];
+    // Only enable -condebug when running NavMesh Autopilot so console.log never bloats to 140MB+
+    const isNavmeshGen = Boolean(extraArgs && extraArgs.includes('nav_quicksave'));
+    const args = isNavmeshGen ? ['-condebug'] : [];
     if (novid) args.push('-novid');
     if (noworkshop) args.push('-noworkshop');
     if (windowed) {
         args.push('-windowed', '-noborder');
         if (width && height) args.push('-w', String(width), '-h', String(height));
     } else {
-        // Enforce Fullscreen DLDSR mode
+        // Enforce Fullscreen 4K DLDSR mode by default unless a specific resolution is chosen
         args.push('-fullscreen');
-        if (width && height) args.push('-w', String(width), '-h', String(height));
+        const targetW = width || 3840;
+        const targetH = height || 2160;
+        args.push('-w', String(targetW), '-h', String(targetH));
     }
     if (gamemode) args.push('+gamemode', gamemode);
 
@@ -386,6 +390,16 @@ async function launchMap(gmodInfo, mapName, options = {}) {
  * Shared helper to spawn Garry's Mod via steam.exe -applaunch 4000 or direct exe
  */
 function spawnGmodWithArgs(gmodInfo, args) {
+    // Prevent console.log bloat from ever slowing down GMod startup
+    if (gmodInfo && gmodInfo.garrysmodDir) {
+        try {
+            const conLog = path.join(gmodInfo.garrysmodDir, 'console.log');
+            if (fs.existsSync(conLog) && fs.statSync(conLog).size > 5 * 1024 * 1024) {
+                fs.unlinkSync(conLog);
+            }
+        } catch (_) {}
+    }
+
     const steamExePath = gmodInfo.steamPath ? path.join(gmodInfo.steamPath, 'steam.exe') : 'C:\\Program Files (x86)\\Steam\\steam.exe';
     if (fs.existsSync(steamExePath)) {
         try {
@@ -432,14 +446,16 @@ async function connectToServer(gmodInfo, { address, password = '', options = {} 
         height = null
     } = options;
 
-    const args = ['-condebug'];
+    const args = [];
     if (novid) args.push('-novid');
     if (windowed) {
         args.push('-windowed', '-noborder');
         if (width && height) args.push('-w', String(width), '-h', String(height));
     } else {
         args.push('-fullscreen');
-        if (width && height) args.push('-w', String(width), '-h', String(height));
+        const targetW = width || 3840;
+        const targetH = height || 2160;
+        args.push('-w', String(targetW), '-h', String(targetH));
     }
 
     args.push('+joystick', '1', '+joy_advanced', '1', '+exec', '360controller');

@@ -429,12 +429,86 @@ async function loadCharacterForEditing(gmodInfo, characterId) {
     };
     walkSounds(path.join(workDir, 'sound'), 'sound');
 
+    // Ensure all 3 standard slots (chase, jump, taunt) are always available in the UI even if a slot was previously muted
+    const soundNamespace = stats.npcClass || 'custom_bot';
+    const standardSlots = [
+        {
+            role: 'chase',
+            relPath: `sound/${soundNamespace}/panic.mp3`,
+            label: '🔥 Main Chase / Panic Music (Loops when nearby)',
+            isPrimaryMusic: true
+        },
+        {
+            role: 'jump',
+            relPath: `sound/${soundNamespace}/jump.mp3`,
+            label: '🦘 Jump Sound Effect',
+            isPrimaryMusic: false
+        },
+        {
+            role: 'taunt',
+            relPath: `sound/${soundNamespace}/pieceofcake.mp3`,
+            label: '🗣️ Catchphrase / Taunt Sound',
+            isPrimaryMusic: false
+        }
+    ];
+    for (const slot of standardSlots) {
+        if (!sounds.some(s => s.role === slot.role)) {
+            sounds.push({
+                relPath: slot.relPath,
+                role: slot.role,
+                label: slot.label,
+                isPrimaryMusic: slot.isPrimaryMusic,
+                fullPath: null,
+                hasFile: false,
+                fileSize: 0
+            });
+        }
+    }
+
+    // Attach default Workshop audio tracks by role so user can click "↺ Default" on any character/remix
+    const defaultByRole = {};
+    if (!target.isCustomRemix) {
+        for (const s of sounds) {
+            if (s.hasFile && s.fullPath && !defaultByRole[s.role]) {
+                defaultByRole[s.role] = s.fullPath;
+            }
+        }
+    } else {
+        // Look for extracted Workshop character sounds in workspaceRoot (e.g. ws_*)
+        try {
+            const wsDirs = fs.readdirSync(workspaceRoot).filter(d => d.startsWith('ws_'));
+            for (const wsDirName of wsDirs) {
+                const wsSoundRoot = path.join(workspaceRoot, wsDirName, 'sound');
+                const collectDefaults = (d, pref = '') => {
+                    if (!fs.existsSync(d)) return;
+                    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+                        const r = pref ? `${pref}/${e.name}` : e.name;
+                        const f = path.join(d, e.name);
+                        if (e.isDirectory()) collectDefaults(f, r);
+                        else if (/\.(mp3|wav|ogg)$/i.test(e.name)) {
+                            const info = describeSoundSlot(r.replace(/\\/g, '/'));
+                            if (!defaultByRole[info.role]) defaultByRole[info.role] = f;
+                        }
+                    }
+                };
+                collectDefaults(wsSoundRoot, 'sound');
+            }
+        } catch (_) {}
+    }
+
+    for (const s of sounds) {
+        const defPath = defaultByRole[s.role] || (s.hasFile && !target.isCustomRemix ? s.fullPath : null);
+        s.defaultFullPath = defPath && fs.existsSync(defPath) ? defPath : null;
+        s.defaultFileName = s.defaultFullPath ? path.basename(s.defaultFullPath) : null;
+    }
+
     // Sort primary chase music to top
     sounds.sort((a, b) => (b.isPrimaryMusic ? 1 : 0) - (a.isPrimaryMusic ? 1 : 0));
 
     return {
         id: target.id,
         isNewTemplate: false,
+        isCustomRemix: Boolean(target.isCustomRemix),
         sourceName: target.name,
         sourcePath: target.sourcePath,
         workDir,
@@ -628,10 +702,7 @@ language.Add("${npcClass}", "${safeDisplayName}")
 
 ENT.RenderGroup = RENDERGROUP_TRANSLUCENT
 
-local spriteMaterial = Material("${folderSlug}/${npcClass}")
-if not spriteMaterial or spriteMaterial:IsError() then
-    spriteMaterial = Material("${folderSlug}/${npcClass}.png", "nocull smooth mips")
-end
+local spriteMaterial = Material("${folderSlug}/${npcClass}.png", "nocull smooth mips")
 local drawOffset = Vector(0, 0, ${halfSize})
 
 function ENT:Initialize()
@@ -828,7 +899,11 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
 
     if (!loaded.isNewTemplate && saveMode === 'override') {
         targetNpcClass = loaded.npcClass;
-        targetAddonFolderName = `studio_2d_override_${targetNpcClass}`;
+        if (loaded.isCustomRemix && loaded.sourcePath) {
+            targetAddonFolderName = path.basename(loaded.sourcePath);
+        } else {
+            targetAddonFolderName = `studio_2d_override_${targetNpcClass}`;
+        }
     } else {
         targetNpcClass = `npc_2d_${cleanSlug}`;
         targetAddonFolderName = `studio_2d_${cleanSlug}`;
@@ -840,25 +915,24 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
     }
     fs.mkdirSync(outAddonDir, { recursive: true });
 
-    // Prepare image buffers from croppedImageDataUrl (or loaded.imageDataUrl)
+    // Prepare 32-bit RGBA PNG buffer from croppedImageDataUrl (or loaded.imageDataUrl)
+    // Pure PNG avoids Source Engine CTexture::ReconstructPartialTexture VTF errors while preserving 100% alpha transparency
     const activeDataUrl = croppedImageDataUrl || loaded.imageDataUrl;
     let pngBuffer = null;
-    let vtfBuffer = null;
 
     if (activeDataUrl && nativeImage) {
         const img = nativeImage.createFromDataURL(activeDataUrl);
         if (!img.isEmpty()) {
             const resized512 = img.resize({ width: 512, height: 512, quality: 'best' });
             pngBuffer = resized512.toPNG();
-            vtfBuffer = createVtfFromNativeImage(resized512, 512);
         }
     }
 
-    if (!loaded.isNewTemplate && saveMode === 'override' && loaded.workDir && fs.existsSync(loaded.workDir)) {
-        // Copy existing addon files into outAddonDir and patch in-place so original behavior/scripts are 100% preserved
+    if (!loaded.isNewTemplate && !loaded.isCustomRemix && saveMode === 'override' && loaded.workDir && fs.existsSync(loaded.workDir)) {
+        // Copy existing Workshop addon files into outAddonDir and patch in-place
         fs.cpSync(loaded.workDir, outAddonDir, { recursive: true });
 
-        // 1. Replace all character sprite PNGs, JPGs, and VTFs (excluding unrelated icons if any)
+        // 1. Replace character sprite with 32-bit RGBA PNG and remove any legacy .vtf/.vmt
         if (pngBuffer) {
             const entIconPath = path.join(outAddonDir, 'materials', 'entities', `${targetNpcClass}.png`);
             fs.mkdirSync(path.dirname(entIconPath), { recursive: true });
@@ -868,7 +942,6 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
             const customSpritePath = path.join(outAddonDir, 'materials', customSpriteRel);
             fs.writeFileSync(customSpritePath, pngBuffer);
 
-            // Also overwrite existing .png / .vtf files in materials/ so VMT references update automatically
             const replaceMatFiles = (dir) => {
                 if (!fs.existsSync(dir)) return;
                 for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -877,19 +950,32 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
                         replaceMatFiles(full);
                     } else if (/\.(png|jpg|jpeg)$/i.test(entry.name)) {
                         fs.writeFileSync(full, pngBuffer);
-                    } else if (/\.vtf$/i.test(entry.name) && vtfBuffer) {
-                        fs.writeFileSync(full, vtfBuffer);
                     }
                 }
             };
             replaceMatFiles(path.join(outAddonDir, 'materials'));
         }
 
-        // 2. Apply sound swaps
+        // 2. Apply sound swaps (including '__NONE__' mute and '__DEFAULT__' restore)
         const extChanges = {}; // oldSoundInternal -> newSoundInternal
-        for (const [relPath, newSrcPath] of Object.entries(soundSwaps)) {
-            if (!newSrcPath || !fs.existsSync(newSrcPath)) continue;
+        const mutedSoundRefs = [];
+        for (const [relPath, swapVal] of Object.entries(soundSwaps)) {
+            if (!swapVal) continue;
             const destOldFull = path.join(outAddonDir, relPath);
+            const oldSoundRef = relPath.replace(/^sound\//i, '');
+
+            if (swapVal === '__NONE__') {
+                if (fs.existsSync(destOldFull)) fs.unlinkSync(destOldFull);
+                mutedSoundRefs.push(oldSoundRef);
+                continue;
+            }
+
+            const slotInfo = loaded.sounds.find(s => s.relPath === relPath);
+            const newSrcPath = swapVal === '__DEFAULT__'
+                ? (slotInfo && slotInfo.defaultFullPath ? slotInfo.defaultFullPath : null)
+                : swapVal;
+
+            if (!newSrcPath || !fs.existsSync(newSrcPath)) continue;
             const oldExt = path.extname(relPath).toLowerCase();
             const newExt = path.extname(newSrcPath).toLowerCase();
 
@@ -897,20 +983,18 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
                 fs.mkdirSync(path.dirname(destOldFull), { recursive: true });
                 fs.copyFileSync(newSrcPath, destOldFull);
             } else {
-                // Extension changed (e.g. .mp3 -> .wav)
                 if (fs.existsSync(destOldFull)) fs.unlinkSync(destOldFull);
                 const newRelPath = relPath.slice(0, -oldExt.length) + newExt;
                 const destNewFull = path.join(outAddonDir, newRelPath);
                 fs.mkdirSync(path.dirname(destNewFull), { recursive: true });
                 fs.copyFileSync(newSrcPath, destNewFull);
 
-                const oldSoundRef = relPath.replace(/^sound\//i, '');
                 const newSoundRef = newRelPath.replace(/^sound\//i, '');
                 extChanges[oldSoundRef] = newSoundRef;
             }
         }
 
-        // 3. Patch Lua entity file with updated stats, sprite size, display name, and any sound extension changes
+        // 3. Patch Lua entity file with updated stats, sprite size, display name, and any sound changes
         const luaPath = path.join(outAddonDir, 'lua', 'entities', `${targetNpcClass}.lua`);
         if (fs.existsSync(luaPath)) {
             let lua = fs.readFileSync(luaPath, 'utf8');
@@ -932,10 +1016,15 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
             for (const [oldRef, newRef] of Object.entries(extChanges)) {
                 lua = lua.split(oldRef).join(newRef);
             }
+            for (const mutedRef of mutedSoundRefs) {
+                const escaped = mutedRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                lua = lua.replace(new RegExp(`util\\.PrecacheSound\\s*\\(\\s*"${escaped}"\\s*\\)`, 'g'), '');
+                lua = lua.replace(new RegExp(`self:EmitSound\\s*\\(\\s*"${escaped}"[^\\)]*\\)`, 'g'), '');
+            }
             fs.writeFileSync(luaPath, lua, 'utf8');
         }
     } else {
-        // Standalone New Character (either remixed from an existing character or created from blank template)
+        // Standalone Character Builder (for new characters AND updating studio_2d_* custom remixes)
         const folderSlug = targetNpcClass;
         const matFolder = path.join(outAddonDir, 'materials', folderSlug);
         const entIconFolder = path.join(outAddonDir, 'materials', 'entities');
@@ -951,21 +1040,42 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
             fs.writeFileSync(path.join(matFolder, `${targetNpcClass}.png`), pngBuffer);
             fs.writeFileSync(path.join(entIconFolder, `${targetNpcClass}.png`), pngBuffer);
         }
-        if (vtfBuffer) {
-            fs.writeFileSync(path.join(matFolder, `${targetNpcClass}.vtf`), vtfBuffer);
-            const vmtContent = `"UnlitGeneric"\n{\n\t"$basetexture" "${folderSlug}/${targetNpcClass}"\n\t"$alphatest" 1\n\t"$alphatestreference" "0.1"\n\t"$allowalphatocoverage" 1\n\t"$translucent" 1\n\t"$vertexalpha" 1\n\t"$vertexcolor" 1\n\t"$nocull" 1\n}\n`;
-            fs.writeFileSync(path.join(matFolder, `${targetNpcClass}.vmt`), vmtContent, 'utf8');
-        }
 
-        // Copy sounds (either swapped sounds or original sounds from the base character)
+        // Copy sounds (handling '__NONE__' mute, '__DEFAULT__' restore, and preventing duplicate song overlap)
         let chaseSoundRel = null;
         let jumpSoundRel = null;
         let tauntSoundRel = null;
+        let chaseExplicitlyMuted = false;
+        let chaseFileSize = 0;
+        let chaseSrcPath = null;
 
         for (const s of loaded.sounds) {
             const swappedSrc = soundSwaps[s.relPath];
-            const srcToUse = (swappedSrc && fs.existsSync(swappedSrc)) ? swappedSrc : (s.fullPath && fs.existsSync(s.fullPath) ? s.fullPath : null);
+            if (swappedSrc === '__NONE__') {
+                if (s.role === 'chase' || s.isPrimaryMusic) chaseExplicitlyMuted = true;
+                continue;
+            }
+
+            let srcToUse = null;
+            if (swappedSrc === '__DEFAULT__') {
+                srcToUse = (s.defaultFullPath && fs.existsSync(s.defaultFullPath))
+                    ? s.defaultFullPath
+                    : (s.fullPath && fs.existsSync(s.fullPath) ? s.fullPath : null);
+            } else if (swappedSrc && fs.existsSync(swappedSrc)) {
+                srcToUse = swappedSrc;
+            } else if (s.fullPath && fs.existsSync(s.fullPath)) {
+                srcToUse = s.fullPath;
+            }
             if (!srcToUse) continue;
+
+            const srcSize = fs.statSync(srcToUse).size;
+
+            // Guard against assigning the exact same full song (>100KB) to both Chase Music and Jump/Taunt SFX
+            if ((s.role === 'jump' || s.role === 'taunt') && chaseSoundRel && chaseFileSize > 100000) {
+                if (srcToUse === chaseSrcPath || srcSize === chaseFileSize) {
+                    continue;
+                }
+            }
 
             const ext = path.extname(srcToUse).toLowerCase() || '.mp3';
             const baseName = path.basename(s.relPath, path.extname(s.relPath)) + ext;
@@ -975,6 +1085,8 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
             const gmodSoundRef = `${folderSlug}/${baseName}`;
             if (s.role === 'chase' || (!chaseSoundRel && s.isPrimaryMusic)) {
                 chaseSoundRel = gmodSoundRef;
+                chaseFileSize = srcSize;
+                chaseSrcPath = srcToUse;
             } else if (s.role === 'jump' && !jumpSoundRel) {
                 jumpSoundRel = gmodSoundRef;
             } else if (!tauntSoundRel) {
@@ -982,9 +1094,10 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
             }
         }
 
-        // Fallback if only 1 sound was provided
-        if (!chaseSoundRel && tauntSoundRel) {
+        // Fallback if only 1 sound was provided and chase music wasn't muted
+        if (!chaseSoundRel && tauntSoundRel && !chaseExplicitlyMuted) {
             chaseSoundRel = tauntSoundRel;
+            tauntSoundRel = null;
         }
 
         const luaScript = generateStandaloneNextbotLua({
