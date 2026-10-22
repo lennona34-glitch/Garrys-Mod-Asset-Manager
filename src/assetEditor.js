@@ -628,7 +628,10 @@ language.Add("${npcClass}", "${safeDisplayName}")
 
 ENT.RenderGroup = RENDERGROUP_TRANSLUCENT
 
-local spriteMaterial = Material("${folderSlug}/${npcClass}.png", "nocull smooth mips")
+local spriteMaterial = Material("${folderSlug}/${npcClass}")
+if not spriteMaterial or spriteMaterial:IsError() then
+    spriteMaterial = Material("${folderSlug}/${npcClass}.png", "nocull smooth mips")
+end
 local drawOffset = Vector(0, 0, ${halfSize})
 
 function ENT:Initialize()
@@ -641,7 +644,19 @@ end
 
 function ENT:RenderOverride()
     render.SetMaterial(spriteMaterial)
-    render.DrawSprite(self:GetPos() + drawOffset, ${spriteSize}, ${spriteSize})
+    local pos = self:GetPos() + drawOffset
+    local normal = EyePos() - pos
+    normal:Normalize()
+    local xyNormal = Vector(normal.x, normal.y, 0)
+    xyNormal:Normalize()
+    local pitch = math.acos(math.Clamp(normal:Dot(xyNormal), -1, 1)) / 3
+    local cos = math.cos(pitch)
+    normal = Vector(
+        xyNormal.x * cos,
+        xyNormal.y * cos,
+        math.sin(pitch)
+    )
+    render.DrawQuadEasy(pos, normal, ${spriteSize}, ${spriteSize}, color_white, 180)
 end
 
 function ENT:DrawTranslucent()
@@ -649,21 +664,42 @@ function ENT:DrawTranslucent()
 end
 
 ${chaseSoundRel ? `
-local panicMusic = nil
-local lastPanic = 0
+_G.__StudioPanicState = _G.__StudioPanicState or {}
+local prevState = _G.__StudioPanicState["${npcClass}"]
+if prevState then
+    if IsValid(prevState.channel) then prevState.channel:Stop() end
+    if prevState.patch then prevState.patch:Stop() end
+end
+
+local musicState = {
+    channel = nil,
+    loading = false,
+    useFallback = false,
+    patch = nil,
+    patchPlaying = false,
+    patchStart = 0
+}
+_G.__StudioPanicState["${npcClass}"] = musicState
+
 local MUSIC_CUTOFF_DISTANCE = 1200
 local MUSIC_PANIC_DISTANCE = 200
+
+local function stopAllMusic()
+    if IsValid(musicState.channel) then
+        musicState.channel:Pause()
+        musicState.channel:SetTime(0)
+    end
+    if musicState.patch and musicState.patchPlaying then
+        musicState.patch:Stop()
+        musicState.patchPlaying = false
+    end
+end
 
 local function updatePanicMusic()
     local bots = ents.FindByClass("${npcClass}")
     if #bots == 0 or not IsValid(LocalPlayer()) then
-        if panicMusic then panicMusic:Stop() end
+        stopAllMusic()
         return
-    end
-
-    if not panicMusic then
-        panicMusic = CreateSound(LocalPlayer(), "${chaseSoundRel}")
-        panicMusic:Stop()
     end
 
     local plyPos = LocalPlayer():GetPos()
@@ -679,16 +715,67 @@ local function updatePanicMusic()
     end
 
     local vol = math.Clamp(bestScore, 0, 1)
-    if vol > 0 then
-        if CurTime() - lastPanic >= 2 then
-            panicMusic:Play()
-        end
-        lastPanic = CurTime()
-        panicMusic:Play()
-        panicMusic:ChangeVolume( math.max(0.02, vol), 0 )
-    elseif CurTime() - lastPanic >= 2 then
-        panicMusic:Stop()
+    if vol <= 0 then
+        stopAllMusic()
+        return
     end
+
+    if not LocalPlayer():Alive() then
+        vol = vol * 0.25
+    end
+
+    -- Primary BASS audio channel (never overlaps or double-triggers MP3/WAV files)
+    if IsValid(musicState.channel) then
+        musicState.channel:EnableLooping(true)
+        musicState.channel:SetVolume(math.max(0.02, vol))
+        if musicState.channel:GetState() ~= GMOD_CHANNEL_PLAYING then
+            musicState.channel:Play()
+        end
+        return
+    end
+
+    if not musicState.loading and not musicState.useFallback then
+        musicState.loading = true
+        sound.PlayFile("sound/${chaseSoundRel}", "noplay noblock", function(station)
+            musicState.loading = false
+            if IsValid(station) then
+                if _G.__StudioPanicState["${npcClass}"] ~= musicState then
+                    station:Stop()
+                    return
+                end
+                station:EnableLooping(true)
+                station:SetVolume(math.max(0.02, vol))
+                station:Play()
+                musicState.channel = station
+            else
+                musicState.useFallback = true
+            end
+        end)
+        return
+    end
+
+    if musicState.useFallback then
+        if not musicState.patch then
+            musicState.patch = CreateSound(LocalPlayer(), "${chaseSoundRel}")
+        end
+        local dur = math.max(SoundDuration("${chaseSoundRel}") or 15, 8)
+        if not musicState.patchPlaying or (CurTime() - musicState.patchStart >= dur) then
+            musicState.patch:Stop()
+            musicState.patch:PlayEx(math.max(0.02, vol), 100)
+            musicState.patchPlaying = true
+            musicState.patchStart = CurTime()
+        else
+            musicState.patch:ChangeVolume(math.max(0.02, vol), 0)
+        end
+    end
+end
+
+function ENT:OnRemove()
+    timer.Simple(0, function()
+        if #ents.FindByClass("${npcClass}") == 0 then
+            stopAllMusic()
+        end
+    end)
 end
 
 timer.Create("${npcClass}_PanicMusicTimer", 0.05, 0, updatePanicMusic)
@@ -866,7 +953,7 @@ async function saveEditedCharacter(gmodInfo, payload, nativeImage) {
         }
         if (vtfBuffer) {
             fs.writeFileSync(path.join(matFolder, `${targetNpcClass}.vtf`), vtfBuffer);
-            const vmtContent = `"UnlitGeneric"\n{\n\t"$basetexture" "${folderSlug}/${targetNpcClass}"\n\t"$alphatest" 1\n\t"$translucent" 1\n\t"$vertexalpha" 1\n\t"$vertexcolor" 1\n\t"$nocull" 1\n}\n`;
+            const vmtContent = `"UnlitGeneric"\n{\n\t"$basetexture" "${folderSlug}/${targetNpcClass}"\n\t"$alphatest" 1\n\t"$alphatestreference" "0.1"\n\t"$allowalphatocoverage" 1\n\t"$translucent" 1\n\t"$vertexalpha" 1\n\t"$vertexcolor" 1\n\t"$nocull" 1\n}\n`;
             fs.writeFileSync(path.join(matFolder, `${targetNpcClass}.vmt`), vmtContent, 'utf8');
         }
 
@@ -1003,9 +1090,30 @@ async function publishCharacterToWorkshop(gmodInfo, payload, nativeImage) {
     });
 }
 
+/**
+ * Saves a recorded WAV buffer (from the built-in Voicemod / Microphone Recorder) to disk
+ */
+function saveRecordedAudio(base64Wav, slotHint = 'voice') {
+    const recDir = path.join(__dirname, '..', 'data', 'studio_recordings');
+    fs.mkdirSync(recDir, { recursive: true });
+    const safeHint = String(slotHint || 'voice').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 24);
+    const fileName = `voicemod_${safeHint}_${Date.now()}.wav`;
+    const filePath = path.join(recDir, fileName);
+    const cleanB64 = String(base64Wav || '').replace(/^data:audio\/[a-z0-9.+-]+;base64,/i, '');
+    const buf = Buffer.from(cleanB64, 'base64');
+    fs.writeFileSync(filePath, buf);
+    return {
+        success: true,
+        filePath,
+        fileName,
+        fileSize: buf.length
+    };
+}
+
 module.exports = {
     scanEditableCharacters,
     loadCharacterForEditing,
     saveEditedCharacter,
-    publishCharacterToWorkshop
+    publishCharacterToWorkshop,
+    saveRecordedAudio
 };

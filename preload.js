@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('api', {
     loadCharacterEditor: (characterId) => ipcRenderer.invoke('load-character-editor', characterId),
     selectImageDialog: () => ipcRenderer.invoke('select-image-dialog'),
     selectAudioDialog: () => ipcRenderer.invoke('select-audio-dialog'),
+    saveRecordedAudio: (base64Wav, slotHint) => ipcRenderer.invoke('save-recorded-audio', { base64Wav, slotHint }),
     saveEditedCharacter: (payload) => ipcRenderer.invoke('save-edited-character', payload),
     publishEditedCharacter: (payload) => ipcRenderer.invoke('publish-edited-character', payload)
 });

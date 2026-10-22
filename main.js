@@ -12,7 +12,7 @@ const { loadPresets, createPreset, deletePreset, applyPreset } = require('./src/
 const { runDiagnostics, fixAddonConflict, undoAddonConflict, getDismissedNavState, dismissNavMap, dismissAllNavMaps, restoreNavMaps } = require('./src/diagnosticsManager');
 const { getDefaultTitle, getDefaultDescription, publishNavmeshToWorkshop, getPublishedNavmeshes, recordPublishedNavmesh } = require('./src/workshopPublisher');
 const { extractSingleFile } = require('./src/gmaParser');
-const { scanEditableCharacters, loadCharacterForEditing, saveEditedCharacter, publishCharacterToWorkshop } = require('./src/assetEditor');
+const { scanEditableCharacters, loadCharacterForEditing, saveEditedCharacter, publishCharacterToWorkshop, saveRecordedAudio } = require('./src/assetEditor');
 
 let mainWindow = null;
 let currentGmodInfo = null;
@@ -42,6 +42,15 @@ function createWindow() {
 
 app.whenReady().then(() => {
     currentGmodInfo = detectGmodPaths();
+    try {
+        const { session } = require('electron');
+        session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+            if (permission === 'media' || permission === 'audioCapture') {
+                return callback(true);
+            }
+            callback(false);
+        });
+    } catch (_) {}
     createWindow();
 
     app.on('activate', () => {
@@ -907,6 +916,11 @@ ipcMain.handle('publish-edited-character', async (event, payload) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     return await publishCharacterToWorkshop(currentGmodInfo, payload, nativeImage);
 });
+
+ipcMain.handle('save-recorded-audio', async (event, { base64Wav, slotHint }) => {
+    return saveRecordedAudio(base64Wav, slotHint);
+});
+
 
 
 

@@ -1,0 +1,9 @@
+"UnlitGeneric"
+{
+	"$basetexture" "npc_2d_chinese_enggman_demonic_remi/npc_2d_chinese_enggman_demonic_remi"
+	"$alphatest" 1
+	"$translucent" 1
+	"$vertexalpha" 1
+	"$vertexcolor" 1
+	"$nocull" 1
+}

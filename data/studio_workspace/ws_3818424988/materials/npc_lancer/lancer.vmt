@@ -1,0 +1,5 @@
+"UnlitGeneric"
+{
+	"$basetexture" "npc_Lancer/Lancer"
+	"$alphatest" 1
+}

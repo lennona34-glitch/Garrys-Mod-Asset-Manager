@@ -5,7 +5,7 @@
     "title": "[NavMesh] gm_infinity_pools",
     "size": "8.6 MB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818692361",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "gm_bikinibottom": {
     "mapName": "gm_bikinibottom",
@@ -13,7 +13,7 @@
     "title": "[NavMesh] gm_bikinibottom",
     "size": "873.9 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818207109",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "gm_garden_remake": {
     "mapName": "gm_garden_remake",
@@ -21,7 +21,7 @@
     "title": "[NavMesh] gm_garden_remake",
     "size": "29.6 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818683373",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "dd_ballroom": {
     "mapName": "dd_ballroom",
@@ -29,7 +29,7 @@
     "title": "[NavMesh] dd_ballroom",
     "size": "338.0 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818173744",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "rp_riteunn_felucia_night_v1": {
     "mapName": "rp_riteunn_felucia_night_v1",
@@ -37,7 +37,7 @@
     "title": "[NavMesh] rp_riteunn_felucia_night_v1",
     "size": "8.0 MB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3817353452",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "bloody_symphony": {
     "mapName": "bloody_symphony",
@@ -45,7 +45,7 @@
     "title": "[NavMesh] bloody_symphony",
     "size": "35.9 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818700418",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "dd_hotel": {
     "mapName": "dd_hotel",
@@ -53,7 +53,7 @@
     "title": "[NavMesh] dd_hotel",
     "size": "1.1 MB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818700725",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "gg_spongebob": {
     "mapName": "gg_spongebob",
@@ -61,7 +61,7 @@
     "title": "[NavMesh] gg_spongebob",
     "size": "167.1 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818787635",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "ttt_scc": {
     "mapName": "ttt_scc",
@@ -69,7 +69,7 @@
     "title": "[NavMesh] ttt_scc",
     "size": "110.3 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818809879",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "gm_wonderful_whimsical_mall": {
     "mapName": "gm_wonderful_whimsical_mall",
@@ -77,34 +77,78 @@
     "title": "[NavMesh] gm_wonderful_whimsical_mall",
     "size": "684.2 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3818810132",
-    "updatedAt": 1791893428677
+    "updatedAt": 1792668072970
   },
   "average_city17_residence": {
     "mapName": "average_city17_residence",
     "workshopId": "3819069726",
     "title": "[NavMesh] average_city17_residence",
+    "size": "564 B",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3819069726",
-    "updatedAt": 1791893446547
+    "updatedAt": 1792668072970
   },
   "gm_backrooms": {
     "mapName": "gm_backrooms",
     "workshopId": "3819069977",
     "title": "[NavMesh] gm_backrooms",
+    "size": "571.4 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3819069977",
-    "updatedAt": 1791893483243
+    "updatedAt": 1792668072970
   },
   "gm_deschool_halloweennight": {
     "mapName": "gm_deschool_halloweennight",
     "workshopId": "3819070476",
     "title": "[NavMesh] gm_deschool_halloweennight",
+    "size": "697.5 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3819070476",
-    "updatedAt": 1791893561349
+    "updatedAt": 1792668072970
   },
   "gmm_garrymod_map_by_woowz_real_rp_normal": {
     "mapName": "gmm_garrymod_map_by_woowz_real_rp_normal",
     "workshopId": "3819075821",
     "title": "[NavMesh] gmm_garrymod_map_by_woowz_real_rp_normal",
+    "size": "189.0 KB",
     "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3819075821",
-    "updatedAt": 1791894494333
+    "updatedAt": 1792668072970
+  },
+  "ttt_minecraft_b5-40": {
+    "mapName": "ttt_minecraft_b5-40",
+    "workshopId": "3819080376",
+    "title": "[NavMesh] ttt_minecraft_b5-40",
+    "size": "12.5 MB",
+    "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3819080376",
+    "updatedAt": 1792668072970
+  },
+  "gm_market_insurgency": {
+    "mapName": "gm_market_insurgency",
+    "workshopId": "3819092850",
+    "title": "[NavMesh] gm_market_insurgency",
+    "size": "22.1 MB",
+    "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3819092850",
+    "updatedAt": 1792668072970
+  },
+  "dm_killbox_lol": {
+    "mapName": "dm_killbox_lol",
+    "workshopId": "3822907244",
+    "title": "[NavMesh] dm_killbox_lol",
+    "size": "27.6 KB",
+    "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3822907244",
+    "updatedAt": 1792668072970
+  },
+  "gmm_garrymod_map_by_woowz_dark_horror_night": {
+    "mapName": "gmm_garrymod_map_by_woowz_dark_horror_night",
+    "workshopId": "3822932637",
+    "title": "[NavMesh] gmm_garrymod_map_by_woowz_dark_horror_night",
+    "size": "185.7 KB",
+    "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3822932637",
+    "updatedAt": 1792668072970
+  },
+  "gm_bigcity_dusk": {
+    "mapName": "gm_bigcity_dusk",
+    "workshopId": "3824027016",
+    "title": "[NavMesh] gm_bigcity_dusk",
+    "size": "28.8 MB",
+    "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3824027016",
+    "updatedAt": 1792668072970
   }
 }

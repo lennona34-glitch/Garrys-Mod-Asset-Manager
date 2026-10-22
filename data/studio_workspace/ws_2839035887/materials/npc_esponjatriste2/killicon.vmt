@@ -1,0 +1,6 @@
+"UnlitGeneric"
+{
+	"$basetexture" "npc_esponjatriste2/esponjatriste2"
+	"$translucent" 1
+	"$vertexalpha" 1
+}

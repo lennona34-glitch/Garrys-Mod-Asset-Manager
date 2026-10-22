@@ -239,10 +239,41 @@
                                 <button class="btn btn-secondary btn-xs" id="btnStudioCenterPhoto" title="Center photo in frame">Center</button>
                             </div>
                             <select id="selStudioCropShape" class="select-styled" style="padding: 4px 8px; font-size: 11px;">
-                                <option value="square">Shape: Classic Square (.jpg)</option>
-                                <option value="rounded">Shape: Rounded Corners</option>
-                                <option value="circle">Shape: Circle Cutout</option>
+                                <option value="square">🖼️ Shape: Classic Square</option>
+                                <option value="face_oval">👤 Shape: Face / Head Oval (Cutout)</option>
+                                <option value="soft_vignette">👻 Shape: Soft Face Vignette</option>
+                                <option value="circle">⭕ Shape: Circle Cutout</option>
+                                <option value="rounded">🔲 Shape: Rounded Corners</option>
                             </select>
+                        </div>
+
+                        <!-- Background Removal & Dramatic Black/White Effect -->
+                        <div style="width: 100%; margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(15, 23, 42, 0.72); border: 1px solid rgba(168, 85, 247, 0.28);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+                                <label class="checkbox-label" style="font-size: 12px; color: #f8fafc; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                                    <input type="checkbox" id="chkStudioRemoveBg">
+                                    <span>✂️ Remove Background (Face Cutout)</span>
+                                </label>
+                                <div style="display: flex; gap: 5px; align-items: center;">
+                                    <button class="btn btn-secondary btn-xs" id="btnStudioMagicWand" title="Click any background color on the photo to erase that color too" style="font-size: 10px; padding: 3px 7px;">🪄 Click Bg to Erase</button>
+                                    <button class="btn btn-secondary btn-xs" id="btnStudioResetBgColors" title="Reset clicked background colors" style="font-size: 10px; padding: 3px 6px; display: none;">↺</button>
+                                </div>
+                            </div>
+                            <div id="studioBgToleranceRow" style="display: none; margin-bottom: 8px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px;">
+                                    <span style="color: #94a3b8;">Cutout Edge Tolerance:</span>
+                                    <strong id="lblStudioBgTolerance" style="color: #c084fc; font-family: var(--font-mono);">38</strong>
+                                </div>
+                                <input type="range" id="rngStudioBgTolerance" min="8" max="95" step="1" value="38" style="width: 100%; accent-color: #a855f7; cursor: pointer;">
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.06);">
+                                <span style="font-size: 11px; color: #cbd5e1; font-weight: 600;">🎬 Dramatic Look:</span>
+                                <select id="selStudioColorFilter" class="select-styled" style="flex: 1; padding: 4px 8px; font-size: 11px;">
+                                    <option value="none">🎨 Original Photo Color</option>
+                                    <option value="bw_dramatic">🎞️ Black &amp; White (Dramatic Effect)</option>
+                                    <option value="bw_noir">🌑 High-Contrast Horror Noir (B&amp;W)</option>
+                                </select>
+                            </div>
                         </div>
 
                         <!-- In-Game World Size -->
@@ -285,11 +316,69 @@
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div>
                                     <h4 style="margin: 0; font-size: 13px; color: #f8fafc;">🎵 Chase Music &amp; Sound Effects</h4>
-                                    <span style="font-size: 11px; color: #94a3b8;">Preview current sounds or swap in any .mp3 or .wav file</span>
+                                    <span style="font-size: 11px; color: #94a3b8;">Preview current sounds, swap in .mp3/.wav files, or record with Voicemod FX below</span>
                                 </div>
                             </div>
-                            <div id="studioSoundsList" style="display: flex; flex-direction: column; gap: 8px; max-height: 195px; overflow-y: auto; padding-right: 4px;">
+                            <div id="studioSoundsList" style="display: flex; flex-direction: column; gap: 8px; max-height: 185px; overflow-y: auto; padding-right: 4px;">
                                 <!-- Populated dynamically -->
+                            </div>
+
+                            <!-- Built-in Voicemod / Voice FX Recorder -->
+                            <div id="studioVoicemodPanel" style="margin-top: 12px; padding: 11px 12px; border-radius: 8px; background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 27, 75, 0.78)); border: 1px solid rgba(56, 189, 248, 0.35);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <span style="font-size: 14px;">🎙️</span>
+                                        <strong style="font-size: 12px; color: #f8fafc;">Voicemod &amp; Custom Voice FX Recorder</strong>
+                                    </div>
+                                    <span id="lblStudioVoiceStatus" style="font-size: 10px; font-family: var(--font-mono); color: #38bdf8; background: rgba(56, 189, 248, 0.12); padding: 2px 7px; border-radius: 10px;">Ready to Record</span>
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                                    <div>
+                                        <label style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 2px;">Target Sound Slot:</label>
+                                        <select id="selStudioRecordSlot" class="select-styled" style="width: 100%; padding: 4px 7px; font-size: 11px;">
+                                            <option value="__Chase / Panic Music">🎵 Chase / Panic Music</option>
+                                            <option value="__Jump Sound">🦘 Jump Sound Effect</option>
+                                            <option value="__Attack / Kill Sound">💥 Attack / Kill Sound</option>
+                                            <option value="__Taunt / Spotted Sound">🗣️ Taunt / Spotted Sound</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 2px;">Voice Effect / Voicemod FX:</label>
+                                        <select id="selStudioVoiceFx" class="select-styled" style="width: 100%; padding: 4px 7px; font-size: 11px;">
+                                            <option value="normal">🎙️ Clean Mic / External Voicemod</option>
+                                            <option value="demon">👹 Demon / Monster (Deep Growl)</option>
+                                            <option value="gremlin">🐿️ Gremlin / Helium (High Pitch)</option>
+                                            <option value="robot">🤖 Cursed Robot (Modulator)</option>
+                                            <option value="vhs">📻 Haunted VHS / Walkie-Talkie</option>
+                                            <option value="ghost">👻 Ghostly Echo (Haunted Cave)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+                                    <label style="font-size: 10px; color: #94a3b8; white-space: nowrap;">Mic Input:</label>
+                                    <select id="selStudioMicDevice" class="select-styled" style="flex: 1; padding: 3px 7px; font-size: 10px;">
+                                        <option value="default">Default Microphone / Voicemod Input</option>
+                                    </select>
+                                </div>
+
+                                <!-- Live Mic Meter -->
+                                <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; margin-bottom: 8px;">
+                                    <div id="studioVoiceMeterBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #22c55e, #38bdf8, #f43f5e); transition: width 0.06s linear;"></div>
+                                </div>
+
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                    <button class="btn btn-secondary btn-xs" id="btnStudioVoiceRecord" style="flex: 1.2; padding: 6px 10px; font-weight: 700; border-color: rgba(244, 63, 94, 0.5); color: #fda4af;">
+                                        🔴 Record Voice
+                                    </button>
+                                    <button class="btn btn-secondary btn-xs" id="btnStudioVoicePreview" disabled style="flex: 1; padding: 6px 8px;">
+                                        ▶️ Preview FX
+                                    </button>
+                                    <button class="btn btn-primary btn-xs" id="btnStudioVoiceApply" disabled style="flex: 1.2; padding: 6px 10px; font-weight: 700;">
+                                        ✅ Use Recording
+                                    </button>
+                                </div>
                             </div>
                         </div>
 

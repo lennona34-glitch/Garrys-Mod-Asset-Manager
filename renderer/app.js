@@ -2485,7 +2485,13 @@ const studioState = {
     zoom: 1.0,            // 0.2 to 3.5
     panX: 0,
     panY: 0,
-    cropShape: 'square',  // 'square' | 'rounded' | 'circle'
+    cropShape: 'square',  // 'square' | 'face_oval' | 'soft_vignette' | 'circle' | 'rounded'
+    removeBg: false,
+    bgTolerance: 38,
+    customBgColors: [],   // Array of { r, g, b } clicked via Magic Wand
+    magicWandMode: false,
+    colorFilter: 'none',  // 'none' | 'bw_dramatic' | 'bw_noir'
+    rawOffCanvas: null,   // Stores unmasked/unfiltered photo draw for eyedropper sampling
     isDragging: false,
     dragStartX: 0,
     dragStartY: 0,
@@ -2721,33 +2727,181 @@ function syncStudioZoomUI() {
     if (lblZoom) lblZoom.textContent = `${clampedPct}%`;
 }
 
+function applyStudioPhotoEffectsAndCutout(ctx) {
+    const imgData = ctx.getImageData(0, 0, 512, 512);
+    const data = imgData.data;
+
+    // 1. Background Removal (Corner/Border Flood-Fill + Color-Key + Feathered Alpha)
+    if (studioState.removeBg || (studioState.customBgColors && studioState.customBgColors.length > 0)) {
+        const tol = studioState.bgTolerance || 38;
+        const seedColors = [...(studioState.customBgColors || [])];
+
+        // Sample perimeter/corner pixels from the drawn image if removeBg is checked
+        if (studioState.removeBg) {
+            const sampleCoords = [
+                [4, 4], [507, 4], [4, 507], [507, 507],
+                [256, 4], [4, 256], [507, 256], [128, 4], [384, 4]
+            ];
+            for (const [sx, sy] of sampleCoords) {
+                const idx = (sy * 512 + sx) * 4;
+                if (data[idx + 3] > 32) {
+                    const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+                    const exists = seedColors.some(c => Math.hypot(c.r - r, c.g - g, c.b - b) < 16);
+                    if (!exists) {
+                        seedColors.push({ r, g, b });
+                    }
+                }
+            }
+        }
+
+        if (seedColors.length > 0) {
+            const maxDist = tol * 2.15;
+            const softStart = maxDist * 0.72;
+            const softRange = Math.max(1, maxDist - softStart);
+
+            const minColorDist = (r, g, b) => {
+                let best = 9999;
+                for (let i = 0; i < seedColors.length; i++) {
+                    const sc = seedColors[i];
+                    const dr = r - sc.r;
+                    const dg = g - sc.g;
+                    const db = b - sc.b;
+                    const d = Math.sqrt(dr * dr + dg * dg + db * db);
+                    if (d < best) best = d;
+                }
+                return best;
+            };
+
+            // Fast BFS flood fill from all 4 borders so connected background disappears cleanly
+            const visited = new Uint8Array(512 * 512);
+            const queue = new Int32Array(512 * 512);
+            let qHead = 0, qTail = 0;
+
+            const pushIfBg = (x, y) => {
+                const pos = y * 512 + x;
+                if (visited[pos]) return;
+                const pIdx = pos * 4;
+                if (data[pIdx + 3] === 0) {
+                    visited[pos] = 1;
+                    queue[qTail++] = pos;
+                    return;
+                }
+                const d = minColorDist(data[pIdx], data[pIdx + 1], data[pIdx + 2]);
+                if (d <= maxDist) {
+                    visited[pos] = 1;
+                    queue[qTail++] = pos;
+                }
+            };
+
+            for (let i = 0; i < 512; i++) {
+                pushIfBg(i, 0);
+                pushIfBg(i, 511);
+                pushIfBg(0, i);
+                pushIfBg(511, i);
+            }
+
+            while (qHead < qTail) {
+                const pos = queue[qHead++];
+                const x = pos % 512;
+                const y = (pos / 512) | 0;
+                const pIdx = pos * 4;
+                const d = minColorDist(data[pIdx], data[pIdx + 1], data[pIdx + 2]);
+                if (d <= softStart) {
+                    data[pIdx + 3] = 0;
+                } else {
+                    const alphaFactor = Math.min(1, Math.max(0, (d - softStart) / softRange));
+                    data[pIdx + 3] = Math.round(data[pIdx + 3] * alphaFactor * 0.45);
+                }
+
+                if (x > 0) pushIfBg(x - 1, y);
+                if (x < 511) pushIfBg(x + 1, y);
+                if (y > 0) pushIfBg(x, y - 1);
+                if (y < 511) pushIfBg(x, y + 1);
+            }
+
+            // Also key out interior background pockets matching custom-picked colors or strong background matches
+            const interiorMaxDist = maxDist * 0.82;
+            const interiorSoftStart = interiorMaxDist * 0.72;
+            const interiorRange = Math.max(1, interiorMaxDist - interiorSoftStart);
+            for (let pos = 0; pos < 512 * 512; pos++) {
+                if (visited[pos]) continue;
+                const pIdx = pos * 4;
+                if (data[pIdx + 3] === 0) continue;
+                const d = minColorDist(data[pIdx], data[pIdx + 1], data[pIdx + 2]);
+                if (d <= interiorSoftStart) {
+                    data[pIdx + 3] = 0;
+                } else if (d <= interiorMaxDist) {
+                    const alphaFactor = (d - interiorSoftStart) / interiorRange;
+                    data[pIdx + 3] = Math.round(data[pIdx + 3] * alphaFactor);
+                }
+            }
+        }
+    }
+
+    // 2. Soft Face Vignette Alpha Feathering (if selected)
+    if (studioState.cropShape === 'soft_vignette') {
+        const cx = 256, cy = 256;
+        const rx = 200, ry = 244;
+        for (let y = 0; y < 512; y++) {
+            const dy = (y - cy) / ry;
+            const dy2 = dy * dy;
+            for (let x = 0; x < 512; x++) {
+                const dx = (x - cx) / rx;
+                const normDist = Math.sqrt(dx * dx + dy2);
+                const pIdx = (y * 512 + x) * 4;
+                if (normDist >= 1.0) {
+                    data[pIdx + 3] = 0;
+                } else if (normDist > 0.74) {
+                    const t = (1.0 - normDist) / 0.26;
+                    const smooth = t * t * (3 - 2 * t);
+                    data[pIdx + 3] = Math.round(data[pIdx + 3] * smooth);
+                }
+            }
+        }
+    }
+
+    // 3. Dramatic Black & White / Horror Noir Filter
+    if (studioState.colorFilter === 'bw_dramatic' || studioState.colorFilter === 'bw_noir') {
+        const isNoir = studioState.colorFilter === 'bw_noir';
+        const contrast = isNoir ? 1.95 : 1.38;
+        const brightnessOffset = isNoir ? -12 : 4;
+
+        for (let y = 0; y < 512; y++) {
+            for (let x = 0; x < 512; x++) {
+                const pIdx = (y * 512 + x) * 4;
+                if (data[pIdx + 3] === 0) continue;
+
+                const r = data[pIdx], g = data[pIdx + 1], b = data[pIdx + 2];
+                // Perceptual luminance
+                let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                // Apply contrast around midpoint 128
+                lum = (lum - 128) * contrast + 128 + brightnessOffset;
+
+                if (isNoir) {
+                    // Subtle analog horror radial darkening + fine grain
+                    const dx = (x - 256) / 256;
+                    const dy = (y - 256) / 256;
+                    const vig = Math.max(0.58, 1 - (dx * dx + dy * dy) * 0.28);
+                    const grain = (((x * 73856093) ^ (y * 19349663)) & 15) - 7;
+                    lum = lum * vig + grain;
+                }
+
+                const v = Math.max(0, Math.min(255, Math.round(lum)));
+                data[pIdx] = v;
+                data[pIdx + 1] = v;
+                data[pIdx + 2] = v;
+            }
+        }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+}
+
 function drawStudioCanvas() {
     const canvas = document.getElementById('studioPhotoCanvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, 512, 512);
-
-    ctx.save();
-    if (studioState.cropShape === 'circle') {
-        ctx.beginPath();
-        ctx.arc(256, 256, 248, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
-    } else if (studioState.cropShape === 'rounded') {
-        const r = 48;
-        ctx.beginPath();
-        ctx.moveTo(r, 8);
-        ctx.lineTo(512 - r, 8);
-        ctx.quadraticCurveTo(504, 8, 504, r);
-        ctx.lineTo(504, 512 - r);
-        ctx.quadraticCurveTo(504, 504, 512 - r, 504);
-        ctx.lineTo(r, 504);
-        ctx.quadraticCurveTo(8, 504, 8, 512 - r);
-        ctx.lineTo(8, r);
-        ctx.quadraticCurveTo(8, 8, r, 8);
-        ctx.closePath();
-        ctx.clip();
-    }
 
     if (studioState.photoImg) {
         const img = studioState.photoImg;
@@ -2756,9 +2910,59 @@ function drawStudioCanvas() {
         const drawX = (512 - drawW) / 2 + studioState.panX;
         const drawY = (512 - drawH) / 2 + studioState.panY;
 
+        // Keep an unmasked copy for Magic Wand color sampling
+        if (!studioState.rawOffCanvas) {
+            studioState.rawOffCanvas = document.createElement('canvas');
+            studioState.rawOffCanvas.width = 512;
+            studioState.rawOffCanvas.height = 512;
+        }
+        const rawCtx = studioState.rawOffCanvas.getContext('2d');
+        rawCtx.clearRect(0, 0, 512, 512);
+        rawCtx.imageSmoothingEnabled = true;
+        rawCtx.imageSmoothingQuality = 'high';
+        rawCtx.drawImage(img, drawX, drawY, drawW, drawH);
+
+        ctx.save();
+        if (studioState.cropShape === 'face_oval') {
+            ctx.beginPath();
+            ctx.ellipse(256, 256, 194, 242, 0, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip();
+        } else if (studioState.cropShape === 'circle') {
+            ctx.beginPath();
+            ctx.arc(256, 256, 248, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip();
+        } else if (studioState.cropShape === 'rounded') {
+            const r = 48;
+            ctx.beginPath();
+            ctx.moveTo(r, 8);
+            ctx.lineTo(512 - r, 8);
+            ctx.quadraticCurveTo(504, 8, 504, r);
+            ctx.lineTo(504, 512 - r);
+            ctx.quadraticCurveTo(504, 504, 512 - r, 504);
+            ctx.lineTo(r, 504);
+            ctx.quadraticCurveTo(8, 504, 8, 512 - r);
+            ctx.lineTo(8, r);
+            ctx.quadraticCurveTo(8, 8, r, 8);
+            ctx.closePath();
+            ctx.clip();
+        }
+
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        ctx.restore();
+
+        // Apply Background Removal, Soft Vignette, and Dramatic B&W Filters
+        if (
+            studioState.removeBg ||
+            (studioState.customBgColors && studioState.customBgColors.length > 0) ||
+            studioState.cropShape === 'soft_vignette' ||
+            studioState.colorFilter !== 'none'
+        ) {
+            applyStudioPhotoEffectsAndCutout(ctx);
+        }
     } else {
         // Friendly empty state on canvas
         ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
@@ -2771,8 +2975,6 @@ function drawStudioCanvas() {
         ctx.font = '18px Segoe UI, sans-serif';
         ctx.fillText('to drop in any picture & zoom to fit!', 256, 278);
     }
-
-    ctx.restore();
 }
 
 function renderStudioSoundsList() {
@@ -2781,6 +2983,16 @@ function renderStudioSoundsList() {
 
     const sounds = studioState.loadedChar.sounds || [];
     container.innerHTML = '';
+
+    // Also synchronize #selStudioRecordSlot options with current character's sound slots
+    const selSlot = document.getElementById('selStudioRecordSlot');
+    if (selSlot && sounds.length > 0) {
+        const prevVal = selSlot.value;
+        selSlot.innerHTML = sounds.map(s => `<option value="${s.relPath}">${s.label}</option>`).join('');
+        if (sounds.some(s => s.relPath === prevVal)) {
+            selSlot.value = prevVal;
+        }
+    }
 
     sounds.forEach(s => {
         const swapped = studioState.soundSwaps[s.relPath];
@@ -2792,8 +3004,8 @@ function renderStudioSoundsList() {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 10px;
-            padding: 8px 10px;
+            gap: 8px;
+            padding: 7px 10px;
             border-radius: 6px;
             background: ${swapped ? 'rgba(52, 211, 153, 0.12)' : 'rgba(15, 23, 42, 0.55)'};
             border: 1px solid ${swapped ? 'rgba(52, 211, 153, 0.4)' : 'rgba(255, 255, 255, 0.07)'};
@@ -2805,18 +3017,21 @@ function renderStudioSoundsList() {
                     ${s.label}
                 </div>
                 <div style="font-size: 11px; color: ${swapped ? '#34d399' : '#94a3b8'}; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    ${swapped ? `✓ Swapped: ${swapped.fileName}` : (s.hasFile ? s.relPath : 'No audio selected yet')}
+                    ${swapped ? `✓ ${swapped.fileName}` : (s.hasFile ? s.relPath : 'No audio selected yet')}
                 </div>
             </div>
-            <div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">
+            <div style="display: flex; gap: 5px; align-items: center; flex-shrink: 0;">
                 ${hasAudioSource ? `
-                <button class="btn btn-secondary btn-xs btn-studio-play-audio" style="padding: 4px 8px; font-size: 11px;">▶ Play</button>
+                <button class="btn btn-secondary btn-xs btn-studio-play-audio" style="padding: 4px 7px; font-size: 10.5px;">▶ Play</button>
                 ` : ''}
-                <button class="btn btn-primary btn-xs btn-studio-swap-audio" style="padding: 4px 10px; font-size: 11px;">
-                    🎵 Change Audio
+                <button class="btn btn-secondary btn-xs btn-studio-record-slot" title="Record custom voice / Voicemod FX for this slot" style="padding: 4px 7px; font-size: 10.5px; border-color: rgba(244, 63, 94, 0.4); color: #fda4af;">
+                    🎙️ Mic
+                </button>
+                <button class="btn btn-primary btn-xs btn-studio-swap-audio" style="padding: 4px 8px; font-size: 10.5px;">
+                    🎵 File
                 </button>
                 ${swapped ? `
-                <button class="btn btn-secondary btn-xs btn-studio-reset-audio" title="Revert to original sound" style="padding: 4px 6px; font-size: 11px;">↩</button>
+                <button class="btn btn-secondary btn-xs btn-studio-reset-audio" title="Revert to original sound" style="padding: 4px 6px; font-size: 10.5px;">↩</button>
                 ` : ''}
             </div>
         `;
@@ -2841,6 +3056,21 @@ function renderStudioSoundsList() {
                 audio.onended = () => {
                     stopStudioAudioPreview();
                 };
+            });
+        }
+
+        const btnRecordSlot = row.querySelector('.btn-studio-record-slot');
+        if (btnRecordSlot) {
+            btnRecordSlot.addEventListener('click', () => {
+                const sel = document.getElementById('selStudioRecordSlot');
+                if (sel) sel.value = s.relPath;
+                const panel = document.getElementById('studioVoicemodPanel');
+                if (panel) {
+                    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    panel.style.boxShadow = '0 0 0 2px #f43f5e';
+                    setTimeout(() => { panel.style.boxShadow = ''; }, 900);
+                }
+                showToast(`🎙️ Selected "${s.label}" in Voicemod Recorder! Pick a voice effect and click 🔴 Record Voice.`, 'info');
             });
         }
 
@@ -2916,10 +3146,32 @@ function setupStudioControls() {
     const canvas = document.getElementById('studioPhotoCanvas');
     const rngZoom = document.getElementById('rngStudioZoom');
 
-    // Drag to pan photo inside canvas
+    // Drag to pan photo inside canvas (or sample background color when Magic Wand is active)
     if (canvas) {
         canvas.addEventListener('mousedown', (e) => {
             if (!studioState.photoImg) return;
+
+            if (studioState.magicWandMode && studioState.rawOffCanvas) {
+                const rect = canvas.getBoundingClientRect();
+                const cx = Math.max(0, Math.min(511, Math.round(((e.clientX - rect.left) / rect.width) * 512)));
+                const cy = Math.max(0, Math.min(511, Math.round(((e.clientY - rect.top) / rect.height) * 512)));
+                const rawCtx = studioState.rawOffCanvas.getContext('2d');
+                const px = rawCtx.getImageData(cx, cy, 1, 1).data;
+                if (px[3] > 10) {
+                    studioState.customBgColors.push({ r: px[0], g: px[1], b: px[2] });
+                    studioState.removeBg = true;
+                    const chkBg = document.getElementById('chkStudioRemoveBg');
+                    if (chkBg) chkBg.checked = true;
+                    const tolRow = document.getElementById('studioBgToleranceRow');
+                    if (tolRow) tolRow.style.display = 'block';
+                    const btnReset = document.getElementById('btnStudioResetBgColors');
+                    if (btnReset) btnReset.style.display = 'inline-block';
+                    drawStudioCanvas();
+                    showToast(`🪄 Erased background color RGB(${px[0]}, ${px[1]}, ${px[2]})! Click another spot or turn off Magic Wand.`, 'success');
+                }
+                return;
+            }
+
             studioState.isDragging = true;
             studioState.dragStartX = e.clientX - studioState.panX;
             studioState.dragStartY = e.clientY - studioState.panY;
@@ -2965,6 +3217,7 @@ function setupStudioControls() {
     document.getElementById('btnStudioChoosePhoto')?.addEventListener('click', async () => {
         const picked = await window.api.selectImageDialog();
         if (picked && picked.dataUrl) {
+            studioState.customBgColors = [];
             loadPhotoIntoStudioCanvas(picked.dataUrl, 'cover');
             showToast(`🖼️ Switched photo to "${picked.fileName}"! Drag or scroll to adjust fit.`, 'success');
         }
@@ -2982,6 +3235,78 @@ function setupStudioControls() {
         studioState.cropShape = e.target.value;
         drawStudioCanvas();
     });
+
+    // Background Removal & Dramatic Black/White Controls
+    const chkRemoveBg = document.getElementById('chkStudioRemoveBg');
+    const tolRow = document.getElementById('studioBgToleranceRow');
+    const rngBgTol = document.getElementById('rngStudioBgTolerance');
+    const lblBgTol = document.getElementById('lblStudioBgTolerance');
+    const btnWand = document.getElementById('btnStudioMagicWand');
+    const btnResetBg = document.getElementById('btnStudioResetBgColors');
+    const selFilter = document.getElementById('selStudioColorFilter');
+
+    if (chkRemoveBg) {
+        chkRemoveBg.addEventListener('change', () => {
+            studioState.removeBg = chkRemoveBg.checked;
+            if (tolRow) tolRow.style.display = (studioState.removeBg || studioState.customBgColors.length > 0) ? 'block' : 'none';
+            // If user enables Remove Background while still on Classic Square, suggest or keep cutout clean
+            drawStudioCanvas();
+        });
+    }
+
+    if (rngBgTol) {
+        rngBgTol.addEventListener('input', () => {
+            studioState.bgTolerance = parseInt(rngBgTol.value, 10) || 38;
+            if (lblBgTol) lblBgTol.textContent = studioState.bgTolerance;
+            drawStudioCanvas();
+        });
+    }
+
+    if (btnWand) {
+        btnWand.addEventListener('click', () => {
+            studioState.magicWandMode = !studioState.magicWandMode;
+            const wrap = document.getElementById('studioCanvasContainer');
+            if (studioState.magicWandMode) {
+                btnWand.style.background = 'rgba(168, 85, 247, 0.35)';
+                btnWand.style.borderColor = '#c084fc';
+                btnWand.textContent = '🪄 Click Photo Bg Now (Active)';
+                if (wrap) wrap.style.cursor = 'crosshair';
+                showToast('🪄 Click any background spot on the photo to erase that color!', 'info');
+            } else {
+                btnWand.style.background = '';
+                btnWand.style.borderColor = '';
+                btnWand.textContent = '🪄 Click Bg to Erase';
+                if (wrap) wrap.style.cursor = 'grab';
+            }
+        });
+    }
+
+    if (btnResetBg) {
+        btnResetBg.addEventListener('click', () => {
+            studioState.customBgColors = [];
+            studioState.magicWandMode = false;
+            if (btnWand) {
+                btnWand.style.background = '';
+                btnWand.style.borderColor = '';
+                btnWand.textContent = '🪄 Click Bg to Erase';
+            }
+            const wrap = document.getElementById('studioCanvasContainer');
+            if (wrap) wrap.style.cursor = 'grab';
+            btnResetBg.style.display = 'none';
+            drawStudioCanvas();
+            showToast('Cleared custom-clicked background colors.', 'info');
+        });
+    }
+
+    if (selFilter) {
+        selFilter.addEventListener('change', () => {
+            studioState.colorFilter = selFilter.value || 'none';
+            drawStudioCanvas();
+        });
+    }
+
+    // Initialize Built-in Voicemod & Voice FX Recorder
+    initStudioVoicemodRecorder();
 
     document.getElementById('btnStudioNewBlank')?.addEventListener('click', () => {
         selectStudioCharacter('template_new');
@@ -3087,6 +3412,462 @@ function setupStudioControls() {
             } finally {
                 btnPublishWs.disabled = false;
                 btnPublishWs.innerHTML = origHtml;
+            }
+        });
+    }
+}
+
+// =========================================================================
+// 🎙️ VOICEMOD & CUSTOM VOICE FX STUDIO RECORDER
+// =========================================================================
+
+const voiceRecorderState = {
+    isRecording: false,
+    audioCtx: null,
+    mediaStream: null,
+    sourceNode: null,
+    processorNode: null,
+    recordedChunks: [],
+    sampleRate: 44100,
+    rawAudioBuffer: null,
+    previewSource: null,
+    startTime: 0,
+    timerInterval: null
+};
+
+async function populateStudioMicDevices() {
+    const selMic = document.getElementById('selStudioMicDevice');
+    if (!selMic || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+        if (audioInputs.length > 0) {
+            let voicemodDeviceId = null;
+            selMic.innerHTML = audioInputs.map((d, idx) => {
+                const label = d.label || `Microphone ${idx + 1}`;
+                const isVoicemod = /voicemod/i.test(label);
+                if (isVoicemod && !voicemodDeviceId) voicemodDeviceId = d.deviceId;
+                return `<option value="${d.deviceId}">${isVoicemod ? '🎭 ' : '🎙️ '}${label}</option>`;
+            }).join('');
+            if (voicemodDeviceId) {
+                selMic.value = voicemodDeviceId;
+            }
+        }
+    } catch (_) {}
+}
+
+function makeDistortionCurve(amount = 40) {
+    const nSamples = 8192;
+    const curve = new Float32Array(nSamples);
+    const deg = Math.PI / 180;
+    for (let i = 0; i < nSamples; ++i) {
+        const x = (i * 2) / nSamples - 1;
+        curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+    }
+    return curve;
+}
+
+async function renderVoiceFxBuffer(rawBuffer, fxPreset = 'normal') {
+    if (!rawBuffer) return null;
+    const targetRate = 44100;
+
+    let rateRatio = 1.0;
+    if (fxPreset === 'demon') rateRatio = 0.72;
+    else if (fxPreset === 'gremlin') rateRatio = 1.42;
+
+    const tailSeconds = (fxPreset === 'ghost' || fxPreset === 'demon') ? 0.65 : 0.1;
+    const outDuration = (rawBuffer.duration / rateRatio) + tailSeconds;
+    const outLength = Math.max(4096, Math.ceil(outDuration * targetRate));
+
+    const offline = new OfflineAudioContext(1, outLength, targetRate);
+    const src = offline.createBufferSource();
+    src.buffer = rawBuffer;
+    src.playbackRate.value = rateRatio;
+
+    if (fxPreset === 'normal') {
+        const comp = offline.createDynamicsCompressor();
+        comp.threshold.value = -20;
+        comp.ratio.value = 4;
+        const gain = offline.createGain();
+        gain.gain.value = 1.25;
+        src.connect(comp);
+        comp.connect(gain);
+        gain.connect(offline.destination);
+    } else if (fxPreset === 'demon') {
+        // Deep pitch + sub-octave growl + warm saturation + bass shelf
+        const subSrc = offline.createBufferSource();
+        subSrc.buffer = rawBuffer;
+        subSrc.playbackRate.value = 0.52;
+        const subGain = offline.createGain();
+        subGain.gain.value = 0.42;
+
+        const lowShelf = offline.createBiquadFilter();
+        lowShelf.type = 'lowshelf';
+        lowShelf.frequency.value = 160;
+        lowShelf.gain.value = 9;
+
+        const shaper = offline.createWaveShaper();
+        shaper.curve = makeDistortionCurve(35);
+
+        const outGain = offline.createGain();
+        outGain.gain.value = 1.15;
+
+        src.connect(lowShelf);
+        subSrc.connect(subGain);
+        subGain.connect(lowShelf);
+        lowShelf.connect(shaper);
+        shaper.connect(outGain);
+        outGain.connect(offline.destination);
+        subSrc.start(0);
+    } else if (fxPreset === 'gremlin') {
+        const highPeak = offline.createBiquadFilter();
+        highPeak.type = 'peaking';
+        highPeak.frequency.value = 2100;
+        highPeak.gain.value = 6;
+
+        const outGain = offline.createGain();
+        outGain.gain.value = 1.25;
+        src.connect(highPeak);
+        highPeak.connect(outGain);
+        outGain.connect(offline.destination);
+    } else if (fxPreset === 'robot') {
+        // Ring Modulator (65Hz carrier) + short metallic comb delay
+        const ringGain = offline.createGain();
+        ringGain.gain.value = 0;
+
+        const osc = offline.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.value = 68;
+        osc.connect(ringGain.gain);
+        osc.start(0);
+
+        const dryGain = offline.createGain();
+        dryGain.gain.value = 0.55;
+
+        const delay = offline.createDelay();
+        delay.delayTime.value = 0.014;
+        const fb = offline.createGain();
+        fb.gain.value = 0.48;
+        delay.connect(fb);
+        fb.connect(delay);
+
+        const outGain = offline.createGain();
+        outGain.gain.value = 1.25;
+
+        src.connect(ringGain);
+        src.connect(dryGain);
+        ringGain.connect(delay);
+        dryGain.connect(delay);
+        delay.connect(outGain);
+        ringGain.connect(outGain);
+        outGain.connect(offline.destination);
+    } else if (fxPreset === 'vhs') {
+        // Bandpass walkie/VHS filter + tape saturation + subtle pitch warble
+        const bp = offline.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 1150;
+        bp.Q.value = 1.1;
+
+        const lfo = offline.createOscillator();
+        lfo.frequency.value = 4.8;
+        const lfoGain = offline.createGain();
+        lfoGain.gain.value = 0.03;
+        lfo.connect(lfoGain);
+        lfoGain.connect(src.playbackRate);
+        lfo.start(0);
+
+        const shaper = offline.createWaveShaper();
+        shaper.curve = makeDistortionCurve(70);
+
+        const outGain = offline.createGain();
+        outGain.gain.value = 1.2;
+
+        src.connect(bp);
+        bp.connect(shaper);
+        shaper.connect(outGain);
+        outGain.connect(offline.destination);
+    } else if (fxPreset === 'ghost') {
+        // Haunted echo chamber (multi-tap feedback delay + highpass whisper sheen)
+        const hp = offline.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 240;
+
+        const delay1 = offline.createDelay(1.0);
+        delay1.delayTime.value = 0.14;
+        const fb1 = offline.createGain();
+        fb1.gain.value = 0.52;
+        delay1.connect(fb1);
+        fb1.connect(delay1);
+
+        const delay2 = offline.createDelay(1.0);
+        delay2.delayTime.value = 0.27;
+        const fb2 = offline.createGain();
+        fb2.gain.value = 0.42;
+        delay2.connect(fb2);
+        fb2.connect(delay2);
+
+        const outGain = offline.createGain();
+        outGain.gain.value = 1.25;
+
+        src.connect(hp);
+        hp.connect(outGain);
+        hp.connect(delay1);
+        hp.connect(delay2);
+        delay1.connect(outGain);
+        delay2.connect(outGain);
+        outGain.connect(offline.destination);
+    }
+
+    src.start(0);
+    return await offline.startRendering();
+}
+
+function encodeAudioBufferToWavBase64(audioBuffer) {
+    const samples = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate || 44100;
+
+    // Normalize peak to 0.94 so recorded sound effects are loud & clear in GMod
+    let maxPeak = 0.01;
+    for (let i = 0; i < samples.length; i++) {
+        const a = Math.abs(samples[i]);
+        if (a > maxPeak) maxPeak = a;
+    }
+    const normGain = Math.min(4.0, 0.94 / maxPeak);
+
+    const dataBytes = samples.length * 2;
+    const buffer = new ArrayBuffer(44 + dataBytes);
+    const view = new DataView(buffer);
+
+    const writeStr = (offset, str) => {
+        for (let i = 0; i < str.length; i++) {
+            view.setUint8(offset + i, str.charCodeAt(i));
+        }
+    };
+
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + dataBytes, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);       // PCM chunk size
+    view.setUint16(20, 1, true);        // PCM format = 1
+    view.setUint16(22, 1, true);        // Mono = 1 channel (ideal for GMod spatial & looping sounds)
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);       // 16-bit PCM
+    writeStr(36, 'data');
+    view.setUint32(40, dataBytes, true);
+
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i] * normGain));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        offset += 2;
+    }
+
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+}
+
+function initStudioVoicemodRecorder() {
+    populateStudioMicDevices();
+
+    const btnRec = document.getElementById('btnStudioVoiceRecord');
+    const btnPrev = document.getElementById('btnStudioVoicePreview');
+    const btnApply = document.getElementById('btnStudioVoiceApply');
+    const lblStatus = document.getElementById('lblStudioVoiceStatus');
+    const meterBar = document.getElementById('studioVoiceMeterBar');
+
+    const stopRecordingInternal = () => {
+        if (!voiceRecorderState.isRecording) return;
+        voiceRecorderState.isRecording = false;
+        if (voiceRecorderState.timerInterval) {
+            clearInterval(voiceRecorderState.timerInterval);
+            voiceRecorderState.timerInterval = null;
+        }
+        if (voiceRecorderState.processorNode) {
+            try { voiceRecorderState.processorNode.disconnect(); } catch (_) {}
+            voiceRecorderState.processorNode = null;
+        }
+        if (voiceRecorderState.sourceNode) {
+            try { voiceRecorderState.sourceNode.disconnect(); } catch (_) {}
+            voiceRecorderState.sourceNode = null;
+        }
+        if (voiceRecorderState.mediaStream) {
+            voiceRecorderState.mediaStream.getTracks().forEach(t => t.stop());
+            voiceRecorderState.mediaStream = null;
+        }
+        if (meterBar) meterBar.style.width = '0%';
+
+        // Assemble recorded chunks into an AudioBuffer
+        const chunks = voiceRecorderState.recordedChunks || [];
+        const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+        if (totalLength > 1024 && voiceRecorderState.audioCtx) {
+            const buf = voiceRecorderState.audioCtx.createBuffer(1, totalLength, voiceRecorderState.sampleRate);
+            const chData = buf.getChannelData(0);
+            let offset = 0;
+            for (const c of chunks) {
+                chData.set(c, offset);
+                offset += c.length;
+            }
+            voiceRecorderState.rawAudioBuffer = buf;
+            const durSec = (totalLength / voiceRecorderState.sampleRate).toFixed(1);
+            if (lblStatus) {
+                lblStatus.textContent = `Recorded ${durSec}s ✓`;
+                lblStatus.style.color = '#34d399';
+            }
+            if (btnPrev) btnPrev.disabled = false;
+            if (btnApply) btnApply.disabled = false;
+            showToast(`🎙️ Captured ${durSec}s voice clip! Click ▶️ Preview FX or ✅ Use Recording.`, 'success');
+        } else {
+            if (lblStatus) lblStatus.textContent = 'Too short — try again';
+        }
+
+        if (btnRec) {
+            btnRec.innerHTML = '🔴 Record Voice';
+            btnRec.style.background = '';
+        }
+    };
+
+    if (btnRec) {
+        btnRec.addEventListener('click', async () => {
+            stopStudioAudioPreview();
+            if (voiceRecorderState.isRecording) {
+                stopRecordingInternal();
+                return;
+            }
+
+            try {
+                const deviceId = document.getElementById('selStudioMicDevice')?.value;
+                const audioConstraint = (deviceId && deviceId !== 'default')
+                    ? { deviceId: { exact: deviceId }, echoCancellation: false, noiseSuppression: true }
+                    : { echoCancellation: false, noiseSuppression: true };
+
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
+                populateStudioMicDevices();
+
+                if (!voiceRecorderState.audioCtx) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    voiceRecorderState.audioCtx = new AudioContextClass();
+                }
+                if (voiceRecorderState.audioCtx.state === 'suspended') {
+                    await voiceRecorderState.audioCtx.resume();
+                }
+
+                voiceRecorderState.sampleRate = voiceRecorderState.audioCtx.sampleRate || 44100;
+                voiceRecorderState.recordedChunks = [];
+                voiceRecorderState.mediaStream = stream;
+                voiceRecorderState.sourceNode = voiceRecorderState.audioCtx.createMediaStreamSource(stream);
+                voiceRecorderState.processorNode = voiceRecorderState.audioCtx.createScriptProcessor(4096, 1, 1);
+
+                voiceRecorderState.processorNode.onaudioprocess = (e) => {
+                    if (!voiceRecorderState.isRecording) return;
+                    const input = e.inputBuffer.getChannelData(0);
+                    voiceRecorderState.recordedChunks.push(new Float32Array(input));
+
+                    // Update live meter bar
+                    let peak = 0;
+                    for (let i = 0; i < input.length; i += 4) {
+                        const a = Math.abs(input[i]);
+                        if (a > peak) peak = a;
+                    }
+                    if (meterBar) {
+                        meterBar.style.width = `${Math.min(100, Math.round(peak * 220))}%`;
+                    }
+                };
+
+                voiceRecorderState.sourceNode.connect(voiceRecorderState.processorNode);
+                voiceRecorderState.processorNode.connect(voiceRecorderState.audioCtx.destination);
+
+                voiceRecorderState.isRecording = true;
+                voiceRecorderState.startTime = Date.now();
+                btnRec.innerHTML = '⏹️ Stop Recording';
+                btnRec.style.background = 'rgba(244, 63, 94, 0.28)';
+
+                voiceRecorderState.timerInterval = setInterval(() => {
+                    const elapsed = ((Date.now() - voiceRecorderState.startTime) / 1000).toFixed(1);
+                    if (lblStatus) {
+                        lblStatus.textContent = `🔴 Recording ${elapsed}s...`;
+                        lblStatus.style.color = '#fda4af';
+                    }
+                }, 100);
+            } catch (err) {
+                showToast('Microphone access error: ' + err.message, 'error');
+            }
+        });
+    }
+
+    if (btnPrev) {
+        btnPrev.addEventListener('click', async () => {
+            if (!voiceRecorderState.rawAudioBuffer) return;
+            stopStudioAudioPreview();
+            if (voiceRecorderState.previewSource) {
+                try { voiceRecorderState.previewSource.stop(); } catch (_) {}
+                voiceRecorderState.previewSource = null;
+                btnPrev.innerHTML = '▶️ Preview FX';
+                return;
+            }
+
+            const fx = document.getElementById('selStudioVoiceFx')?.value || 'normal';
+            btnPrev.disabled = true;
+            btnPrev.innerHTML = '⏳ FX...';
+            try {
+                const processedBuf = await renderVoiceFxBuffer(voiceRecorderState.rawAudioBuffer, fx);
+                if (!voiceRecorderState.audioCtx) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    voiceRecorderState.audioCtx = new AudioContextClass();
+                }
+                const src = voiceRecorderState.audioCtx.createBufferSource();
+                src.buffer = processedBuf;
+                src.connect(voiceRecorderState.audioCtx.destination);
+                voiceRecorderState.previewSource = src;
+                btnPrev.disabled = false;
+                btnPrev.innerHTML = '⏹️ Stop';
+                src.onended = () => {
+                    voiceRecorderState.previewSource = null;
+                    btnPrev.innerHTML = '▶️ Preview FX';
+                };
+                src.start(0);
+            } catch (err) {
+                btnPrev.disabled = false;
+                btnPrev.innerHTML = '▶️ Preview FX';
+                showToast('Preview error: ' + err.message, 'error');
+            }
+        });
+    }
+
+    if (btnApply) {
+        btnApply.addEventListener('click', async () => {
+            if (!voiceRecorderState.rawAudioBuffer) return;
+            const slotRelPath = document.getElementById('selStudioRecordSlot')?.value || '__Chase / Panic Music';
+            const fx = document.getElementById('selStudioVoiceFx')?.value || 'normal';
+
+            btnApply.disabled = true;
+            const origText = btnApply.innerHTML;
+            btnApply.innerHTML = '⏳ Saving WAV...';
+            try {
+                const processedBuf = await renderVoiceFxBuffer(voiceRecorderState.rawAudioBuffer, fx);
+                const base64Wav = encodeAudioBufferToWavBase64(processedBuf);
+                const saved = await window.api.saveRecordedAudio(base64Wav, `${slotRelPath}_${fx}`);
+                if (saved && saved.filePath) {
+                    studioState.soundSwaps[slotRelPath] = saved;
+                    renderStudioSoundsList();
+                    if (lblStatus) {
+                        lblStatus.textContent = `Applied (${fx}) ✓`;
+                        lblStatus.style.color = '#34d399';
+                    }
+                    showToast(`🎙️ Voicemod (${fx}) recording assigned to slot! Click "Save to My Garry's Mod" when ready.`, 'success');
+                }
+            } catch (err) {
+                showToast('Failed to save voice recording: ' + err.message, 'error');
+            } finally {
+                btnApply.disabled = false;
+                btnApply.innerHTML = origText;
             }
         });
     }
@@ -3200,15 +3981,17 @@ async function refreshPrivateGameModalInfo() {
     if (window.api.getLocalNetworkInfo) {
         try {
             const netInfo = await window.api.getLocalNetworkInfo();
-            if (netInfo && netInfo.ip) {
-                cachedLocalLanIp = netInfo.ip;
-                if (lblIp) {
-                    lblIp.textContent = `${netInfo.ip}:27015 (${netInfo.interfaceName || 'LAN'})`;
-                }
+            const resolvedIp = (netInfo && (netInfo.ip || netInfo.primaryIp)) || '127.0.0.1';
+            const ifaceLabel = (netInfo && netInfo.interfaceName) || 'Local Network';
+            cachedLocalLanIp = resolvedIp;
+            if (lblIp) {
+                lblIp.textContent = `${resolvedIp}:27015 (${ifaceLabel})`;
             }
         } catch (err) {
             if (lblIp) lblIp.textContent = '127.0.0.1:27015';
         }
+    } else if (lblIp) {
+        lblIp.textContent = '127.0.0.1:27015';
     }
 }
 
@@ -3377,4 +4160,9 @@ document.addEventListener('DOMContentLoaded', () => {
             triggerDirectConnect();
         });
     }
+
+    // Pre-resolve Local LAN IP on startup so it never sits at "Detecting IP..."
+    setTimeout(() => {
+        refreshPrivateGameModalInfo();
+    }, 300);
 });

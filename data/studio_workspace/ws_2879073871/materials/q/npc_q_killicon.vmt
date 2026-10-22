@@ -1,0 +1,6 @@
+"UnlitGeneric"
+{
+	"$basetexture" "q/npc_q_killicon"
+	"$translucent" 1
+	"$vertexalpha" 1
+}

@@ -460,7 +460,8 @@ function getLocalNetworkInfo() {
     for (const [name, list] of Object.entries(nets)) {
         if (!Array.isArray(list)) continue;
         for (const iface of list) {
-            if (iface.family === 'IPv4' && !iface.internal) {
+            const isIPv4 = iface.family === 'IPv4' || iface.family === 4;
+            if (isIPv4 && !iface.internal) {
                 const parts = iface.address.split('.');
                 const broadcast = parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.255` : '255.255.255.255';
                 addresses.push({
@@ -474,8 +475,16 @@ function getLocalNetworkInfo() {
             }
         }
     }
+    addresses.sort((a, b) => {
+        const aScore = (a.ip.startsWith('192.168.') ? 10 : a.ip.startsWith('10.') ? 5 : 0) + (/wi-?fi|ethernet|wlan|lan/i.test(a.interfaceName) ? 5 : 0);
+        const bScore = (b.ip.startsWith('192.168.') ? 10 : b.ip.startsWith('10.') ? 5 : 0) + (/wi-?fi|ethernet|wlan|lan/i.test(b.interfaceName) ? 5 : 0);
+        return bScore - aScore;
+    });
+    const best = addresses[0] || { ip: '127.0.0.1', interfaceName: 'Localhost' };
     return {
-        primaryIp: addresses.length > 0 ? addresses[0].ip : '127.0.0.1',
+        ip: best.ip,
+        interfaceName: best.interfaceName,
+        primaryIp: best.ip,
         defaultPort: 27015,
         addresses
     };
