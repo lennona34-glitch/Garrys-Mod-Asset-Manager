@@ -115,6 +115,12 @@
                         <label class="checkbox-label">
                             <input type="checkbox" id="chkOnlyNavMesh"> Has NavMesh
                         </label>
+                        <select id="selQuickQMenuZoom" class="select-styled" title="Scale up Garry's Mod 'Q' Spawnmenu icons, text, and categories for TV / Couch play" style="border-color: rgba(52, 211, 153, 0.4);">
+                            <option value="1">🔍 Q-Menu: 100% (Desktop)</option>
+                            <option value="1.5">🔍 Q-Menu: 150% (Large)</option>
+                            <option value="2" selected>🔍 Q-Menu: 200% (Couch / TV)</option>
+                            <option value="2.5">🔍 Q-Menu: 250% (Extra Huge)</option>
+                        </select>
                         <select id="selQuickHostMode" class="select-styled" title="Choose whether map card Launch buttons start Singleplayer, Local LAN, or Steam Friends P2P" style="border-color: rgba(56, 189, 248, 0.35);">
                             <option value="singleplayer">Launch Mode: 👤 Solo Singleplayer</option>
                             <option value="lan">Launch Mode: 🏠 Host Local LAN (8 Players)</option>
@@ -713,6 +719,41 @@
                             <button class="btn btn-primary" id="btnApplyControllerTuning" style="padding: 8px 16px;">
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                 <span>Save & Apply Controller Tuning</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card settings-card" id="cardQMenuZoom">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <h3 style="margin-bottom: 0;">🔍 Couch / TV 'Q' Menu (Spawnmenu) Zoom</h3>
+                            <span id="qmenuZoomStatusBadge" class="badge" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); padding: 4px 8px; font-size: 11px;">200% Couch TV Active</span>
+                        </div>
+                        <p class="card-desc">Enlarges Garry's Mod's tiny 2006 Spawnmenu (<code>Q</code> / D-Pad Left) for living-room TV play: scales up NPC, NextBot, Weapon, Entity, and Prop tiles up to 4x–6x larger in area, enlarges category &amp; toolgun fonts, adds a <strong>Giant Hover Magnifier Card</strong>, and places a live <code>100% / 150% / 200% / 250%</code> zoom bar at the top of the Q-Menu in-game.</p>
+
+                        <div class="form-group" style="margin-top: 14px; margin-bottom: 14px;">
+                            <label style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; display: block;">Choose Q-Menu Icon &amp; Text Zoom Level:</label>
+                            <div class="filter-chips" id="qmenuZoomChips">
+                                <div class="chip" data-qzoom="1">100% Normal (Desktop)</div>
+                                <div class="chip" data-qzoom="1.5">150% Large</div>
+                                <div class="chip active" data-qzoom="2">200% Couch / TV (Recommended)</div>
+                                <div class="chip" data-qzoom="2.5">250% Extra Huge</div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 10px; background: rgba(14, 165, 233, 0.05); border: 1px solid rgba(14, 165, 233, 0.15); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+                            <label class="checkbox-label" style="cursor: pointer;">
+                                <input type="checkbox" id="chkQMenuMagnifier" checked>
+                                <span><strong>🔎 Giant Hover Magnifier Preview Card</strong> — Shows a huge 340×390 high-contrast preview &amp; 28pt title card in the corner whenever you point at an item in the Q-Menu.</span>
+                            </label>
+                            <label class="checkbox-label" style="cursor: pointer;">
+                                <input type="checkbox" id="chkQMenuToggle" checked>
+                                <span><strong>📌 Tap Q / D-Pad Left to Toggle Open</strong> (<code>spawnmenu_toggle 1</code>) — Tap once to keep the Q-Menu open while browsing instead of holding the button down.</span>
+                            </label>
+                        </div>
+
+                        <div style="display: flex; justify-content: flex-end;">
+                            <button class="btn btn-primary" id="btnApplyQMenuZoom" style="padding: 8px 16px;">
+                                <span>🔍 Save &amp; Apply Q-Menu Couch Zoom</span>
                             </button>
                         </div>
                     </div>

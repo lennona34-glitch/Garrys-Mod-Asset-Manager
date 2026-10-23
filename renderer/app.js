@@ -722,6 +722,73 @@ function setupEventHandlers() {
             });
         }
     } catch (_) {}
+
+    // Couch / TV 'Q' Menu Zoom Controls
+    const syncQMenuZoomUI = (settings) => {
+        if (!settings) return;
+        const scaleStr = String(settings.scale || 2);
+        const quickSel = document.getElementById('selQuickQMenuZoom');
+        if (quickSel) quickSel.value = scaleStr;
+
+        document.querySelectorAll('#qmenuZoomChips .chip').forEach(c => {
+            c.classList.toggle('active', c.getAttribute('data-qzoom') === scaleStr);
+        });
+
+        const chkMag = document.getElementById('chkQMenuMagnifier');
+        if (chkMag && settings.magnifier !== undefined) chkMag.checked = Boolean(settings.magnifier);
+
+        const chkTog = document.getElementById('chkQMenuToggle');
+        if (chkTog && settings.toggleMode !== undefined) chkTog.checked = Boolean(settings.toggleMode);
+
+        const badge = document.getElementById('qmenuZoomStatusBadge');
+        if (badge) {
+            const pct = Math.round((Number(settings.scale) || 2) * 100);
+            badge.textContent = `${pct}% Zoom Active`;
+        }
+    };
+
+    const saveAndApplyQMenuZoom = async (scaleOverride = null) => {
+        let scale = scaleOverride;
+        if (scale === null) {
+            const activeChip = document.querySelector('#qmenuZoomChips .chip.active');
+            scale = activeChip ? Number(activeChip.getAttribute('data-qzoom')) : 2.0;
+        }
+        const magnifier = document.getElementById('chkQMenuMagnifier') ? document.getElementById('chkQMenuMagnifier').checked : true;
+        const toggleMode = document.getElementById('chkQMenuToggle') ? document.getElementById('chkQMenuToggle').checked : true;
+
+        if (window.api.applyQMenuZoom) {
+            try {
+                const res = await window.api.applyQMenuZoom({ scale, magnifier, toggleMode });
+                syncQMenuZoomUI(res);
+                const pct = Math.round((res.scale || scale) * 100);
+                showToast(`🔍 'Q' Menu Couch Zoom set to ${pct}% (${magnifier ? 'Hover Magnifier ON' : 'Magnifier OFF'})!`, 'success');
+            } catch (err) {
+                showToast('Failed to apply Q-Menu zoom: ' + err.message, 'error');
+            }
+        }
+    };
+
+    if (window.api.getQMenuZoom) {
+        window.api.getQMenuZoom().then(syncQMenuZoomUI).catch(() => {});
+    }
+
+    const selQuickQMenuZoom = document.getElementById('selQuickQMenuZoom');
+    if (selQuickQMenuZoom) {
+        selQuickQMenuZoom.addEventListener('change', (e) => {
+            saveAndApplyQMenuZoom(Number(e.target.value));
+        });
+    }
+
+    document.querySelectorAll('#qmenuZoomChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const val = Number(chip.getAttribute('data-qzoom'));
+            saveAndApplyQMenuZoom(val);
+        });
+    });
+
+    document.getElementById('chkQMenuMagnifier')?.addEventListener('change', () => saveAndApplyQMenuZoom(null));
+    document.getElementById('chkQMenuToggle')?.addEventListener('change', () => saveAndApplyQMenuZoom(null));
+    document.getElementById('btnApplyQMenuZoom')?.addEventListener('click', () => saveAndApplyQMenuZoom(null));
 }
 
 // ---------------- MAPS HUB ----------------
@@ -814,8 +881,8 @@ function renderMaps() {
                     <span class="pill-nav pill-bundled" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.3);" title="Official built-in NavMesh provided inside Workshop addon">
                         ● Built-in NavMesh
                     </span>` : `
-                    <span class="pill-nav none">
-                        ○ No NavMesh
+                    <span class="pill-nav none" data-action="gen-nav" data-map="${map.mapName}" style="cursor: pointer;" title="Click to automatically generate a NavMesh (.nav) for Nextbots & NPCs!">
+                        ⚡ Create NavMesh
                     </span>`}
                 </div>
             </div>
@@ -824,6 +891,13 @@ function renderMaps() {
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                     <span>Launch</span>
                 </button>
+                ${!map.hasNav ? `
+                <button class="btn btn-secondary btn-sm" data-action="gen-nav" data-map="${map.mapName}" title="1-Click Autopilot: Launch Garry's Mod and automatically calculate a NavMesh (.nav) for Nextbots & NPCs" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); padding: 6px 10px; font-size: 12px; font-weight: 600; white-space: nowrap;">
+                    ⚡ NavMesh
+                </button>` : `
+                <button class="btn btn-secondary btn-icon" data-action="gen-nav" data-map="${map.mapName}" title="Rebuild / Regenerate NavMesh (.nav) with 1-Click Autopilot" style="color: #94a3b8;">
+                    ⚡
+                </button>`}
                 ${(map.hasNativeNav || isPublished) ? `
                 <button class="btn btn-secondary btn-icon btn-nav-cloud" 
                     title="${isPublished ? `NavMesh Uploaded to Steam Workshop! (${pubInfo.title || map.mapName}) - Click to manage or view on Workshop` : 'Publish NavMesh to Steam Workshop'}" 
@@ -853,6 +927,23 @@ function renderMaps() {
         // Card button actions
         card.querySelector('.btn-card-launch').addEventListener('click', () => {
             launchSelectedMap(map.mapName);
+        });
+
+        card.querySelectorAll('[data-action="gen-nav"]').forEach(btnGen => {
+            btnGen.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                btnGen.disabled = true;
+                const origHtml = btnGen.innerHTML;
+                btnGen.innerHTML = `⏳...`;
+                showToast(`Launching ${map.mapName} with NavMesh Autopilot... GMod will compute and save ${map.mapName}.nav automatically!`, 'info');
+                try {
+                    await window.api.generateMapNavmesh(map.mapName);
+                } catch (err) {
+                    showToast('Failed to start NavMesh Autopilot: ' + err.message, 'error');
+                    btnGen.disabled = false;
+                    btnGen.innerHTML = origHtml;
+                }
+            });
         });
 
         const btnPublishNav = card.querySelector('[data-action="publish-nav"]');

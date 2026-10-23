@@ -43,6 +43,11 @@ function createWindow() {
 app.whenReady().then(() => {
     currentGmodInfo = detectGmodPaths();
     try {
+        installQMenuCouchZoom(currentGmodInfo);
+    } catch (e) {
+        console.warn('Q-Menu Couch Zoom auto-install warning:', e);
+    }
+    try {
         const { session } = require('electron');
         session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
             if (permission === 'media' || permission === 'audioCapture') {
@@ -865,6 +870,532 @@ end)
 ipcMain.handle('apply-controller-tuning', async (event, options = 7) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
     return applyControllerTuning(currentGmodInfo, options);
+});
+
+const QMENU_ZOOM_SETTINGS_PATH = path.join(__dirname, 'data', 'qmenu_zoom_settings.json');
+
+function loadQMenuZoomSettings() {
+    try {
+        if (fs.existsSync(QMENU_ZOOM_SETTINGS_PATH)) {
+            const parsed = JSON.parse(fs.readFileSync(QMENU_ZOOM_SETTINGS_PATH, 'utf8'));
+            return {
+                scale: Number(parsed.scale) || 2.0,
+                magnifier: parsed.magnifier !== false,
+                toggleMode: parsed.toggleMode !== false
+            };
+        }
+    } catch (_) {}
+    return { scale: 2.0, magnifier: true, toggleMode: true };
+}
+
+function saveQMenuZoomSettings(settings) {
+    try {
+        const dir = path.dirname(QMENU_ZOOM_SETTINGS_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(QMENU_ZOOM_SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8');
+    } catch (_) {}
+}
+
+function installQMenuCouchZoom(gmodInfo, customOptions = null) {
+    if (!gmodInfo || !gmodInfo.garrysmodDir) {
+        return { success: false, error: 'Garry\'s Mod directory not found' };
+    }
+
+    const saved = loadQMenuZoomSettings();
+    const scale = customOptions && customOptions.scale !== undefined ? Number(customOptions.scale) : saved.scale;
+    const magnifier = customOptions && customOptions.magnifier !== undefined ? Boolean(customOptions.magnifier) : saved.magnifier;
+    const toggleMode = customOptions && customOptions.toggleMode !== undefined ? Boolean(customOptions.toggleMode) : saved.toggleMode;
+
+    const cleanScale = Math.max(1.0, Math.min(2.5, Number(scale.toFixed(2))));
+    saveQMenuZoomSettings({ scale: cleanScale, magnifier, toggleMode });
+
+    const clientAutorunDir = path.join(gmodInfo.garrysmodDir, 'lua', 'autorun', 'client');
+    if (!fs.existsSync(clientAutorunDir)) {
+        fs.mkdirSync(clientAutorunDir, { recursive: true });
+    }
+
+    const luaPath = path.join(clientAutorunDir, 'zz_qmenu_couch_zoom.lua');
+    const luaCode = `-- ============================================================================
+-- Garry's Mod Asset Manager: Couch / TV Big-Screen 'Q' Menu (Spawnmenu) Zoom
+-- Scales ContentIcons (Weapons, NPCs, NextBots, Entities, Vehicles),
+-- SpawnIcons (Props), Left Category Tree, Fonts, and adds a live Top Zoom Bar
+-- + Giant Hover Magnifier Card so you can read & browse from across the room!
+-- ============================================================================
+if SERVER then return end
+
+local cvarZoom = CreateClientConVar("gmod_qmenu_zoom", "${cleanScale.toFixed(2)}", true, false, "Q-Menu Couch Zoom Scale (1.0 to 2.5)")
+local cvarMag  = CreateClientConVar("gmod_qmenu_magnifier", "${magnifier ? '1' : '0'}", true, false, "Show Giant Hover Magnifier Card in Q-Menu")
+
+local DEFAULT_ZOOM_SCALE = ${cleanScale.toFixed(2)}
+local DEFAULT_MAGNIFIER  = ${magnifier ? '1' : '0'}
+local DEFAULT_TOGGLE_Q   = ${toggleMode ? '1' : '0'}
+
+local GModQMenu_HoveredIcon = nil
+local matOverlay_Normal = Material("gui/ContentIcon-normal.png")
+local matOverlay_Hovered = Material("gui/ContentIcon-hovered.png")
+local matOverlay_AdminOnly = Material("icon16/shield.png")
+local matOverlay_NPCWeapon = Material("icon16/monkey.png")
+local matOverlay_NPCWeaponSelected = Material("icon16/monkey_tick.png")
+
+local function GetActiveZoomScale()
+    local val = cvarZoom and cvarZoom:GetFloat() or DEFAULT_ZOOM_SCALE
+    return math.Clamp(val, 1.0, 2.5)
+end
+
+local lastFontScale = 0
+local function UpdateQMenuFonts(scale)
+    scale = scale or GetActiveZoomScale()
+    if math.abs(scale - lastFontScale) < 0.02 then return end
+    lastFontScale = scale
+
+    local uiFontSize = math.Round(13 * math.Clamp(scale * 0.85, 1.0, 2.0))
+    local tileFontSize = math.Round(13 * math.Clamp(scale * 0.92, 1.0, 2.2))
+
+    surface.CreateFont("DermaDefault", {
+        font = "Tahoma",
+        size = uiFontSize,
+        weight = scale > 1.1 and 650 or 500,
+        antialias = true,
+        extended = true
+    })
+
+    surface.CreateFont("DermaDefaultBold", {
+        font = "Tahoma",
+        size = uiFontSize + 1,
+        weight = 800,
+        antialias = true,
+        extended = true
+    })
+
+    surface.CreateFont("GModQMenu_TileFont", {
+        font = "Tahoma",
+        size = tileFontSize,
+        weight = 800,
+        antialias = true,
+        extended = true
+    })
+
+    surface.CreateFont("GModQMenu_TopBarFont", {
+        font = "Tahoma",
+        size = 18,
+        weight = 800,
+        antialias = true,
+        extended = true
+    })
+
+    surface.CreateFont("GModQMenu_MagTitle", {
+        font = "Tahoma",
+        size = 28,
+        weight = 900,
+        antialias = true,
+        extended = true
+    })
+
+    surface.CreateFont("GModQMenu_MagSub", {
+        font = "Tahoma",
+        size = 19,
+        weight = 600,
+        antialias = true,
+        extended = true
+    })
+end
+
+local function CustomContentIconPaint(self, w, h)
+    if self.Depressed and not self.Dragging then
+        if self.Border ~= 8 then
+            self.Border = 8
+            if self.OnDepressionChanged then self:OnDepressionChanged(true) end
+        end
+    else
+        if self.Border ~= 0 then
+            self.Border = 0
+            if self.OnDepressionChanged then self:OnDepressionChanged(false) end
+        end
+    end
+
+    local b = self.Border or 0
+    local isHov = not dragndrop.IsDragging() and (self:IsHovered() or self.Depressed or self:IsChildHovered())
+    if isHov then
+        GModQMenu_HoveredIcon = self
+    end
+
+    render.PushFilterMag(TEXFILTER.ANISOTROPIC)
+    render.PushFilterMin(TEXFILTER.ANISOTROPIC)
+    if IsValid(self.Image) then
+        -- Paint across the FULL zoomed width & height (fixes GMod's hardcoded 128-8 bug)
+        self.Image:PaintAt(3 + b, 3 + b, w - 6 - b * 2, h - 6 - b * 2)
+    end
+    render.PopFilterMin()
+    render.PopFilterMag()
+
+    surface.SetDrawColor(255, 255, 255, 255)
+    if isHov then
+        surface.SetMaterial(matOverlay_Hovered)
+    else
+        surface.SetMaterial(matOverlay_Normal)
+    end
+    surface.DrawTexturedRect(b, b, w - b * 2, h - b * 2)
+
+    if self.GetAdminOnly and self:GetAdminOnly() then
+        surface.SetMaterial(matOverlay_AdminOnly)
+        surface.DrawTexturedRect(b + 8, b + 8, 20, 20)
+    end
+
+    if self.GetIsNPCWeapon and self:GetIsNPCWeapon() then
+        surface.SetMaterial(matOverlay_NPCWeapon)
+        if self.GetSpawnName and self:GetSpawnName() == GetConVarString("gmod_npcweapon") then
+            surface.SetMaterial(matOverlay_NPCWeaponSelected)
+        end
+        surface.DrawTexturedRect(w - b - 28, b + 8, 20, 20)
+    end
+
+    if self.ScanForNPCWeapons then
+        self:ScanForNPCWeapons()
+    end
+
+    local niceName = self.m_NiceName or (self.GetSpawnName and self:GetSpawnName()) or ""
+    if niceName ~= "" then
+        local scale = GetActiveZoomScale()
+        local fontName = scale > 1.05 and "GModQMenu_TileFont" or "DermaDefault"
+        surface.SetFont(fontName)
+        local tW, tH = surface.GetTextSize(niceName)
+
+        local pillPadY = math.Round(4 * math.Clamp(scale, 1, 2))
+        local pillH = tH + pillPadY * 2
+        local pillY = h - pillH - b - 5
+        draw.RoundedBox(6, b + 5, pillY, w - (b + 5) * 2, pillH, Color(10, 15, 25, isHov and 235 or 200))
+
+        local buffere = b + 10
+        local px, py = self:LocalToScreen(buffere, 0)
+        local pw, ph = self:LocalToScreen(w - buffere, h)
+        render.SetScissorRect(px, py, pw, ph, true)
+
+        local x = w / 2 - tW / 2
+        if tW > (w - buffere * 2) then
+            local mx = self:ScreenToLocal(input.GetCursorPos())
+            local diff = tW - w + buffere * 2
+            x = buffere + math.Remap(math.Clamp(mx, 0, w), 0, w, 0, -diff)
+        end
+
+        local textY = pillY + pillPadY
+        draw.SimpleText(niceName, fontName, x + 1, textY + 1, Color(0, 0, 0, 240))
+        draw.SimpleText(niceName, fontName, x, textY, isHov and Color(56, 189, 248) or color_white)
+        render.SetScissorRect(0, 0, 0, 0, false)
+    end
+end
+
+local function PatchSpawnMenuVGUI()
+    local scale = GetActiveZoomScale()
+    UpdateQMenuFonts(scale)
+
+    local contentTbl = vgui.GetControlTable("ContentIcon")
+    if contentTbl then
+        if not contentTbl._OrigCouchInit then
+            contentTbl._OrigCouchInit = contentTbl.Init
+        end
+        contentTbl.Init = function(self, ...)
+            contentTbl._OrigCouchInit(self, ...)
+            local s = GetActiveZoomScale()
+            local sz = math.Round(128 * s)
+            self:SetSize(sz, sz)
+            if IsValid(self.Image) then
+                self.Image:SetSize(sz - 6, sz - 6)
+            end
+        end
+        contentTbl.Paint = CustomContentIconPaint
+    end
+
+    local spawnTbl = vgui.GetControlTable("SpawnIcon")
+    if spawnTbl then
+        if not spawnTbl._OrigCouchInit then
+            spawnTbl._OrigCouchInit = spawnTbl.Init
+        end
+        spawnTbl.Init = function(self, ...)
+            spawnTbl._OrigCouchInit(self, ...)
+            local s = GetActiveZoomScale()
+            if s > 1.05 then
+                local sz = math.Round(64 * math.max(1.0, s * 1.2))
+                self:SetSize(sz, sz)
+            end
+        end
+        if not spawnTbl._OrigCouchThink then
+            spawnTbl._OrigCouchThink = spawnTbl.Think
+        end
+        spawnTbl.Think = function(self, ...)
+            if spawnTbl._OrigCouchThink then spawnTbl._OrigCouchThink(self, ...) end
+            if self:IsHovered() then
+                GModQMenu_HoveredIcon = self
+            end
+        end
+    end
+
+    local treeTbl = vgui.GetControlTable("DTree")
+    if treeTbl then
+        if not treeTbl._OrigCouchInit then
+            treeTbl._OrigCouchInit = treeTbl.Init
+        end
+        treeTbl.Init = function(self, ...)
+            treeTbl._OrigCouchInit(self, ...)
+            local s = GetActiveZoomScale()
+            self:SetLineHeight(math.Round(18 * math.Clamp(s * 0.9, 1.0, 2.2)))
+        end
+    end
+end
+
+local function WalkAndResizePanel(pnl, scale)
+    if not IsValid(pnl) then return end
+    local cname = pnl:GetName() or ""
+
+    if cname == "ContentIcon" then
+        local sz = math.Round(128 * scale)
+        pnl:SetSize(sz, sz)
+        if IsValid(pnl.Image) then
+            pnl.Image:SetSize(sz - 6, sz - 6)
+        end
+        pnl.Paint = CustomContentIconPaint
+    elseif cname == "SpawnIcon" then
+        local sz = scale > 1.05 and math.Round(64 * math.max(1.0, scale * 1.2)) or 64
+        pnl:SetSize(sz, sz)
+    elseif cname == "DTree" then
+        if pnl.SetLineHeight then
+            pnl:SetLineHeight(math.Round(18 * math.Clamp(scale * 0.9, 1.0, 2.2)))
+        end
+        if pnl.LayoutTree then pnl:LayoutTree() end
+    elseif cname == "ContentSidebar" then
+        local parent = pnl:GetParent()
+        if IsValid(parent) and parent.SetLeftWidth then
+            local targetW = math.Round(192 * math.Clamp(scale * 0.85, 1.0, 2.0))
+            parent:SetLeftMin(targetW)
+            parent:SetLeftWidth(targetW)
+            parent:InvalidateLayout(true)
+        end
+    end
+
+    for _, child in ipairs(pnl:GetChildren()) do
+        WalkAndResizePanel(child, scale)
+    end
+
+    if cname == "DTileLayout" or cname == "ContentContainer" then
+        if pnl.Layout then pnl:Layout() end
+        pnl:InvalidateLayout(true)
+    end
+end
+
+local function EnsureZoomBarOnSpawnMenu()
+    if not IsValid(g_SpawnMenu) then return end
+    if IsValid(g_SpawnMenu.CouchZoomBar) then
+        g_SpawnMenu.CouchZoomBar:MoveToFront()
+        return
+    end
+
+    local bar = vgui.Create("DPanel", g_SpawnMenu)
+    g_SpawnMenu.CouchZoomBar = bar
+    bar:SetSize(780, 42)
+    bar:SetPos(math.max(16, ScrW() / 2 - 390), 4)
+    bar:SetZPos(32000)
+
+    bar.Paint = function(self, w, h)
+        draw.RoundedBox(10, 0, 0, w, h, Color(15, 23, 42, 240))
+        surface.SetDrawColor(56, 189, 248, 180)
+        surface.DrawOutlinedRect(0, 0, w, h, 2)
+        draw.SimpleText("🔍 Couch Q-Menu Zoom:", "GModQMenu_TopBarFont", 14, h / 2, Color(56, 189, 248), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+
+    local presets = {
+        { label = "100%", val = 1.0, x = 215, w = 78 },
+        { label = "150%", val = 1.5, x = 300, w = 78 },
+        { label = "200% TV", val = 2.0, x = 385, w = 105 },
+        { label = "250% Huge", val = 2.5, x = 497, w = 115 }
+    }
+
+    for _, p in ipairs(presets) do
+        local btn = vgui.Create("DButton", bar)
+        btn:SetText("")
+        btn:SetPos(p.x, 6)
+        btn:SetSize(p.w, 30)
+        btn.Paint = function(self, w, h)
+            local active = math.abs(GetActiveZoomScale() - p.val) < 0.08
+            local bg = active and Color(14, 165, 233, 255) or (self:IsHovered() and Color(51, 65, 85, 255) or Color(30, 41, 59, 230))
+            draw.RoundedBox(6, 0, 0, w, h, bg)
+            draw.SimpleText(p.label, "GModQMenu_TopBarFont", w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        btn.DoClick = function()
+            RunConsoleCommand("gmod_qmenu_zoom", tostring(p.val))
+            surface.PlaySound("ui/buttonclickrelease.wav")
+            timer.Simple(0.03, function()
+                local s = GetActiveZoomScale()
+                PatchSpawnMenuVGUI()
+                if IsValid(g_SpawnMenu) then
+                    WalkAndResizePanel(g_SpawnMenu, s)
+                end
+            end)
+        end
+    end
+
+    local magBtn = vgui.Create("DButton", bar)
+    magBtn:SetText("")
+    magBtn:SetPos(620, 6)
+    magBtn:SetSize(150, 30)
+    magBtn.Paint = function(self, w, h)
+        local on = cvarMag and cvarMag:GetBool()
+        local bg = on and Color(16, 185, 129, 230) or Color(51, 65, 85, 220)
+        draw.RoundedBox(6, 0, 0, w, h, bg)
+        draw.SimpleText(on and "🔎 Big Preview: ON" or "🔎 Preview: OFF", "GModQMenu_TopBarFont", w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    magBtn.DoClick = function()
+        local now = not (cvarMag and cvarMag:GetBool())
+        RunConsoleCommand("gmod_qmenu_magnifier", now and "1" or "0")
+        surface.PlaySound("ui/buttonclickrelease.wav")
+    end
+end
+
+local function ApplyCouchQMenuSettings()
+    RunConsoleCommand("spawnmenu_border", "0.015")
+    if DEFAULT_TOGGLE_Q == 1 then
+        RunConsoleCommand("spawnmenu_toggle", "1")
+    end
+    local s = GetActiveZoomScale()
+    PatchSpawnMenuVGUI()
+    if IsValid(g_SpawnMenu) then
+        WalkAndResizePanel(g_SpawnMenu, s)
+        EnsureZoomBarOnSpawnMenu()
+    end
+end
+
+hook.Add("PostGamemodeLoaded", "GModManager_QMenuCouchZoom_PostGM", function()
+    timer.Simple(0, ApplyCouchQMenuSettings)
+end)
+
+hook.Add("InitPostEntity", "GModManager_QMenuCouchZoom_Init", function()
+    timer.Simple(0.2, function()
+        RunConsoleCommand("gmod_qmenu_zoom", tostring(DEFAULT_ZOOM_SCALE))
+        RunConsoleCommand("gmod_qmenu_magnifier", tostring(DEFAULT_MAGNIFIER))
+        ApplyCouchQMenuSettings()
+    end)
+end)
+
+hook.Add("SpawnMenuCreated", "GModManager_QMenuCouchZoom_Created", function(sm)
+    timer.Simple(0.05, function()
+        PatchSpawnMenuVGUI()
+        if IsValid(sm) then
+            WalkAndResizePanel(sm, GetActiveZoomScale())
+            EnsureZoomBarOnSpawnMenu()
+        end
+    end)
+end)
+
+hook.Add("SpawnMenuOpened", "GModManager_QMenuCouchZoom_Opened", function()
+    local s = GetActiveZoomScale()
+    PatchSpawnMenuVGUI()
+    if IsValid(g_SpawnMenu) then
+        WalkAndResizePanel(g_SpawnMenu, s)
+        EnsureZoomBarOnSpawnMenu()
+    end
+end)
+
+hook.Add("ContentSidebarSelection", "GModManager_QMenuCouchZoom_NodeSelect", function(pnlContent, node)
+    timer.Simple(0.02, function()
+        local s = GetActiveZoomScale()
+        if IsValid(pnlContent) then
+            WalkAndResizePanel(pnlContent, s)
+        end
+    end)
+end)
+
+-- Giant Couch Hover Magnifier Card drawn on top of Q-Menu when hovering an item
+hook.Add("DrawOverlay", "GModManager_QMenuCouchMagnifier", function()
+    if not IsValid(g_SpawnMenu) or not g_SpawnMenu:IsVisible() then
+        GModQMenu_HoveredIcon = nil
+        return
+    end
+    if not cvarMag or not cvarMag:GetBool() then return end
+
+    local icon = GModQMenu_HoveredIcon
+    if not IsValid(icon) or not icon:IsVisible() then return end
+    if not icon:IsHovered() and not (icon.IsChildHovered and icon:IsChildHovered()) then
+        GModQMenu_HoveredIcon = nil
+        return
+    end
+
+    local title = icon.m_NiceName or (icon.GetModelName and icon:GetModelName()) or (icon.GetSpawnName and icon:GetSpawnName()) or ""
+    if title == "" then return end
+
+    local ctype = (icon.GetContentType and icon:GetContentType()) or (icon:GetName() == "SpawnIcon" and "3D Model / Prop" or "Item")
+    local cardW, cardH = 340, 390
+    local cardX = ScrW() - cardW - 28
+    local cardY = ScrH() - cardH - 28
+
+    -- If cursor is in bottom-right corner, move magnifier card to bottom-left so it never blocks clicking
+    local mx, my = input.GetCursorPos()
+    if mx > cardX - 40 and my > cardY - 40 then
+        cardX = 28
+    end
+
+    draw.RoundedBox(14, cardX, cardY, cardW, cardH, Color(15, 23, 42, 248))
+    surface.SetDrawColor(56, 189, 248, 230)
+    surface.DrawOutlinedRect(cardX, cardY, cardW, cardH, 3)
+
+    if IsValid(icon.Image) and icon.Image.GetMaterial and icon.Image:GetMaterial() then
+        surface.SetDrawColor(255, 255, 255, 255)
+        surface.SetMaterial(icon.Image:GetMaterial())
+        surface.DrawTexturedRect(cardX + 20, cardY + 16, 300, 290)
+    else
+        draw.RoundedBox(10, cardX + 20, cardY + 16, 300, 290, Color(30, 41, 59, 255))
+        draw.SimpleText("📦", "GModQMenu_MagTitle", cardX + cardW / 2, cardY + 160, Color(56, 189, 248), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+
+    draw.SimpleText(string.upper(tostring(ctype)), "GModQMenu_MagSub", cardX + cardW / 2, cardY + 322, Color(56, 189, 248), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+
+    -- Truncate or fit title cleanly
+    surface.SetFont("GModQMenu_MagTitle")
+    local dispTitle = tostring(title)
+    if #dispTitle > 22 then
+        dispTitle = string.sub(dispTitle, 1, 21) .. "…"
+    end
+    draw.SimpleText(dispTitle, "GModQMenu_MagTitle", cardX + cardW / 2, cardY + 356, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+end)
+
+PatchSpawnMenuVGUI()
+`;
+
+    fs.writeFileSync(luaPath, luaCode, 'utf8');
+
+    // Also persist spawnmenu_border and gmod_qmenu_zoom in autoexec.cfg so it applies on every boot
+    try {
+        const cfgDir = path.join(gmodInfo.garrysmodDir, 'cfg');
+        if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
+        const autoexecPath = path.join(cfgDir, 'autoexec.cfg');
+        let autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
+        const qmenuCfgBlock = `// --- Couch Q-Menu Zoom & Fullscreen Spawnmenu ---
+spawnmenu_border "0.015"
+spawnmenu_toggle "${toggleMode ? '1' : '0'}"
+gmod_qmenu_zoom "${cleanScale.toFixed(2)}"
+gmod_qmenu_magnifier "${magnifier ? '1' : '0'}"`;
+
+        if (autoexecContent.includes('// --- Couch Q-Menu Zoom')) {
+            autoexecContent = autoexecContent.replace(/\/\/ --- Couch Q-Menu Zoom[\s\S]*?gmod_qmenu_magnifier "[^"]*"/, qmenuCfgBlock);
+        } else {
+            autoexecContent += `\n\n${qmenuCfgBlock}\n`;
+        }
+        fs.writeFileSync(autoexecPath, autoexecContent, 'utf8');
+    } catch (_) {}
+
+    return {
+        success: true,
+        scale: cleanScale,
+        magnifier,
+        toggleMode,
+        luaPath
+    };
+}
+
+ipcMain.handle('get-qmenu-zoom', async () => {
+    return loadQMenuZoomSettings();
+});
+
+ipcMain.handle('apply-qmenu-zoom', async (event, options) => {
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    return installQMenuCouchZoom(currentGmodInfo, options);
 });
 
 // ---------------- ASSET STUDIO / 2D CHARACTER EDITOR ----------------

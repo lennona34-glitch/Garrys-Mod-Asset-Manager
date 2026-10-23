@@ -57,6 +57,8 @@ contextBridge.exposeInMainWorld('api', {
     publishNavmesh: (options) => ipcRenderer.invoke('publish-navmesh', options),
     getPublishedNavmeshes: () => ipcRenderer.invoke('get-published-navmeshes'),
     applyControllerTuning: (preset) => ipcRenderer.invoke('apply-controller-tuning', preset),
+    getQMenuZoom: () => ipcRenderer.invoke('get-qmenu-zoom'),
+    applyQMenuZoom: (options) => ipcRenderer.invoke('apply-qmenu-zoom', options),
     onNavmeshCompleted: (callback) => ipcRenderer.on('navmesh-completed', (_event, mapName) => callback(mapName)),
     onNavmeshProgress: (callback) => ipcRenderer.on('navmesh-progress', (_event, data) => callback(data)),
 

@@ -44,7 +44,7 @@ function loadDismissedNavState() {
         if (fs.existsSync(DISMISSED_NAV_FILE)) {
             const data = JSON.parse(fs.readFileSync(DISMISSED_NAV_FILE, 'utf8'));
             return {
-                silenceAll: data.silenceAll !== false,
+                silenceAll: Boolean(data.silenceAll),
                 dismissedMaps: Array.isArray(data.dismissedMaps) ? data.dismissedMaps : DEFAULT_ROGUE_MAPS,
                 rogueMaps: Array.isArray(data.rogueMaps) ? data.rogueMaps : DEFAULT_ROGUE_MAPS
             };
@@ -52,7 +52,7 @@ function loadDismissedNavState() {
     } catch (_) {}
 
     const defaultState = {
-        silenceAll: true,
+        silenceAll: false,
         dismissedMaps: [...DEFAULT_ROGUE_MAPS],
         rogueMaps: [...DEFAULT_ROGUE_MAPS]
     };
@@ -449,13 +449,6 @@ async function runDiagnostics(gmodInfo) {
         } catch (_) {}
     }
 
-    // Nextbot notice
-    const hasNextbots = installedGmaHeaders.some(h => 
-        h.name.toLowerCase().includes('nextbot') || 
-        h.name.toLowerCase().includes('sprunki') ||
-        h.name.toLowerCase().includes('alphabet')
-    );
-
     const navState = loadDismissedNavState();
     const dismissedSet = new Set((navState.dismissedMaps || []).map(m => m.toLowerCase()));
 
@@ -465,13 +458,13 @@ async function runDiagnostics(gmodInfo) {
 
     const exemptMaps = mapsWithoutNav.filter(m => navState.silenceAll || dismissedSet.has(m.mapName.toLowerCase()));
 
-    if (hasNextbots && activeMapsWithoutNav.length > 0) {
+    if (activeMapsWithoutNav.length > 0) {
         recommendations.push({
             type: 'navmesh_notice',
             title: 'Nextbots Cannot Pathfind Without Map NavMeshes',
-            message: `You have dozens of Nextbots installed (Sprunki, Spongebob, Bendy, Alphabet Lore), but ${activeMapsWithoutNav.length} of your maps lack a Navigation Mesh (.nav file).`,
+            message: `${activeMapsWithoutNav.length} of your active maps do not have a Navigation Mesh (.nav file) yet. Click ⚡ Auto-Fix on any map below (or click ⚡ Create NavMesh directly on any map card in the Maps Hub) to generate one automatically!`,
             affectedMaps: activeMapsWithoutNav.map(m => m.mapName),
-            tip: 'Nextbots freeze in place or flood console with pathfinding errors on maps without a .nav file. To fix a map, load it in singleplayer, open the console (~), and type: nav_generate (GMod will calculate the mesh and restart the map automatically). Or search Steam Workshop for "<map_name> navmesh"!'
+            tip: 'Nextbots freeze in place or flood console with pathfinding errors on maps without a .nav file. Click ⚡ Auto-Fix next to any map to launch GMod and calculate the mesh automatically.'
         });
     }
 
