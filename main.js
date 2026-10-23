@@ -48,6 +48,16 @@ app.whenReady().then(() => {
         console.warn('Q-Menu Couch Zoom auto-install warning:', e);
     }
     try {
+        installVoicemodLanVoiceAutopilot(currentGmodInfo);
+    } catch (e) {
+        console.warn('Voicemod LAN Voice Autopilot auto-install warning:', e);
+    }
+    try {
+        applyControllerTuning(currentGmodInfo);
+    } catch (e) {
+        console.warn('Controller tuning auto-install warning:', e);
+    }
+    try {
         const { session } = require('electron');
         session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
             if (permission === 'media' || permission === 'audioCapture') {
@@ -131,11 +141,29 @@ ipcMain.handle('scan-maps', async () => {
 
 ipcMain.handle('launch-map', async (event, { mapName, options }) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    try {
+        installVoicemodLanVoiceAutopilot(currentGmodInfo);
+        const mode = (options && (options.hostMode || options.mode)) || 'singleplayer';
+        if ((mode === 'lan' || mode === 'p2p') && (!options || options.autoVoicemod !== false)) {
+            await activateVoicemodForGmod({ launchApp: true });
+        } else {
+            const st = getVoicemodStatus();
+            if (st.running) {
+                await activateVoicemodForGmod({ launchApp: false });
+            }
+        }
+    } catch (_) {}
     return await launchMap(currentGmodInfo, mapName, options);
 });
 
 ipcMain.handle('connect-to-server', async (event, payload) => {
     if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    try {
+        installVoicemodLanVoiceAutopilot(currentGmodInfo);
+        if (!payload || payload.autoVoicemod !== false) {
+            await activateVoicemodForGmod({ launchApp: true });
+        }
+    } catch (_) {}
     return await connectToServer(currentGmodInfo, payload);
 });
 
@@ -576,7 +604,7 @@ bind "BACK" "+showscores"
 // D-Pad Quick Actions
 bind "POV_UP" "undo"
 bind "POV_DOWN" "noclip"
-bind "POV_RIGHT" "+voicerecord"
+bind "POV_RIGHT" "gmod_toggle_openmic"
 bind "POV_LEFT" "+menu"
 
 // Legacy DirectInput Fallbacks (JOY1 - JOY10)
@@ -592,12 +620,13 @@ bind "JOY9" "messagemode"
 bind "JOY10" "sprint_toggle"
 
 // Keyboard fallbacks
-bind "b" "+duck"`;
+bind "b" "+duck"
+bind "x" "gmod_toggle_openmic"`;
 
     // 1. Update autoexec.cfg
     let autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
     if (autoexecContent.includes('// --- Modern Tactical Wireless Controller') || autoexecContent.includes('// --- Smooth Wireless Controller')) {
-        autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?bind "b" "\+duck"/, controllerBlock.trim());
+        autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?(bind "x" "gmod_toggle_openmic"|bind "b" "\+duck")/, controllerBlock.trim());
         if (!autoexecContent.includes('bind "b" "+duck"')) {
             autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?bind "POV_LEFT" "\+menu"/, controllerBlock.trim());
         }
@@ -630,6 +659,8 @@ bind "b" "+duck"`;
             configContent = configContent.replace(/joy_accelmax "[^"]*"/, `joy_accelmax "${accelMax}"`);
             configContent = configContent.replace(/sensitivity "[^"]*"/, `sensitivity "${mouseSens}"`);
             configContent = configContent.replace(/bind "b" "[^"]*"/, `bind "b" "+duck"`);
+            configContent = configContent.replace(/bind "x" "[^"]*"/, `bind "x" "gmod_toggle_openmic"`);
+            configContent = configContent.replace(/bind "RIGHT" "[^"]*"/, `bind "RIGHT" "gmod_toggle_openmic"`);
             fs.writeFileSync(configPath, configContent, 'utf8');
         } catch (_) {}
     }
@@ -678,6 +709,97 @@ end)
                 let binContent = fs.readFileSync(pFile, 'utf8');
                 binContent = binContent.replace(/\"button_B\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/gi, '"button_B"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
                 binContent = binContent.replace(/\"right_bumper\"[\s\S]*?\"binding\"\s+\"[^\"]*\"/gi, '"right_bumper"\n\t\t\t{\n\t\t\t\t"activators"\n\t\t\t\t{\n\t\t\t\t\t"Full_Press"\n\t\t\t\t\t{\n\t\t\t\t\t\t"bindings"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t"binding"\t\t"key_press LEFT_CONTROL, Crouch"');
+
+                // D-Pad (Group 2) - Add Long_Press on dpad_east (D-Pad Right) to Toggle Voice Mic (X), while keeping Short Press as Next Weapon
+                const group2Block = `"group"
+	{
+		"id"		"2"
+		"mode"		"dpad"
+		"inputs"
+		{
+			"dpad_north"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press F, Flashlight"
+						}
+						"settings"
+						{
+							"haptic_intensity"		"1"
+						}
+					}
+				}
+			}
+			"dpad_south"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press V, Noclip"
+						}
+						"settings"
+						{
+							"haptic_intensity"		"1"
+						}
+					}
+				}
+			}
+			"dpad_east"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"mouse_wheel SCROLL_DOWN, Next Weapon"
+						}
+						"settings"
+						{
+							"haptic_intensity"		"1"
+							"interruptable"		"1"
+						}
+					}
+					"Long_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press X, Toggle Voice Mic"
+						}
+						"settings"
+						{
+							"haptic_intensity"		"2"
+						}
+					}
+				}
+			}
+			"dpad_west"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"mouse_wheel SCROLL_UP, Prev Weapon"
+						}
+						"settings"
+						{
+							"haptic_intensity"		"1"
+						}
+					}
+				}
+			}
+		}
+	}`;
+                binContent = binContent.replace(/"group"\s*\{\s*"id"\s*"2"[\s\S]*?\n\t\}/, group2Block);
 
                 // Left Trigger (Group 4) - Hold to Aim Down Sights (ADS)
                 const group4Block = `"group"
@@ -1190,8 +1312,8 @@ local function EnsureZoomBarOnSpawnMenu()
 
     local bar = vgui.Create("DPanel", g_SpawnMenu)
     g_SpawnMenu.CouchZoomBar = bar
-    bar:SetSize(780, 42)
-    bar:SetPos(math.max(16, ScrW() / 2 - 390), 4)
+    bar:SetSize(1090, 42)
+    bar:SetPos(math.max(16, ScrW() / 2 - 545), 4)
     bar:SetZPos(32000)
 
     bar.Paint = function(self, w, h)
@@ -1245,6 +1367,45 @@ local function EnsureZoomBarOnSpawnMenu()
     magBtn.DoClick = function()
         local now = not (cvarMag and cvarMag:GetBool())
         RunConsoleCommand("gmod_qmenu_magnifier", now and "1" or "0")
+        surface.PlaySound("ui/buttonclickrelease.wav")
+    end
+
+    -- Voicemod Hands-Free Open Mic Toggle Button right on the Q-Menu bar!
+    local micBtn = vgui.Create("DButton", bar)
+    micBtn:SetText("")
+    micBtn:SetPos(778, 6)
+    micBtn:SetSize(158, 30)
+    micBtn.Paint = function(self, w, h)
+        local cv = GetConVar("gmod_openmic_enabled")
+        local on = not cv or cv:GetBool()
+        local bg = on and Color(16, 185, 129, 235) or Color(220, 38, 38, 220)
+        draw.RoundedBox(6, 0, 0, w, h, bg)
+        draw.SimpleText(on and "🎙️ Mic: LIVE (Open)" or "🔇 Mic: MUTED", "GModQMenu_TopBarFont", w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    micBtn.DoClick = function()
+        RunConsoleCommand("gmod_toggle_openmic")
+    end
+
+    -- In-Game Voice Loopback Test Button (hear how GMod transmits your Morgan Freeman voice)
+    local loopBtn = vgui.Create("DButton", bar)
+    loopBtn:SetText("")
+    loopBtn:SetPos(944, 6)
+    loopBtn:SetSize(136, 30)
+    loopBtn.Paint = function(self, w, h)
+        local cv = GetConVar("voice_loopback")
+        local on = cv and cv:GetBool()
+        local bg = on and Color(245, 158, 11, 240) or Color(51, 65, 85, 220)
+        draw.RoundedBox(6, 0, 0, w, h, bg)
+        draw.SimpleText(on and "🔊 Test Voice: ON" or "🔊 Test Voice", "GModQMenu_TopBarFont", w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    loopBtn.DoClick = function()
+        local cv = GetConVar("voice_loopback")
+        local now = not (cv and cv:GetBool())
+        RunConsoleCommand("voice_loopback", now and "1" or "0")
+        if now then
+            RunConsoleCommand("gmod_openmic_enabled", "1")
+            RunConsoleCommand("+voicerecord")
+        end
         surface.PlaySound("ui/buttonclickrelease.wav")
     end
 end
@@ -1466,6 +1627,271 @@ ipcMain.handle('publish-edited-character', async (event, payload) => {
 
 ipcMain.handle('save-recorded-audio', async (event, { base64Wav, slotHint }) => {
     return saveRecordedAudio(base64Wav, slotHint);
+});
+
+// ---------------- VOICEMOD V3 & LAN HANDS-FREE VOICE AUTOPILOT ----------------
+
+const VOICEMOD_EXE_PATH = path.join(process.env.LOCALAPPDATA || 'C:\\Users\\adria\\AppData\\Local', 'VoicemodV3', 'app', 'last', 'Voicemod.exe');
+const VOICEMOD_SETTINGS_INI = path.join(process.env.LOCALAPPDATA || 'C:\\Users\\adria\\AppData\\Local', 'VoicemodV3', 'settings.ini');
+const VOICEMOD_ENDPOINT_TOOL = 'C:\\Program Files\\Voicemod V3\\driver\\AudioEndPointTool.exe';
+const VOICEMOD_MIC_ID = '{0.0.1.00000000}.{babac7f5-3e88-43a8-9547-ca1e8c243c67}';
+
+function installVoicemodLanVoiceAutopilot(gmodInfo) {
+    if (!gmodInfo || !gmodInfo.garrysmodDir) {
+        return { success: false, error: 'Garry\'s Mod directory not found' };
+    }
+
+    const autorunDir = path.join(gmodInfo.garrysmodDir, 'lua', 'autorun');
+    if (!fs.existsSync(autorunDir)) {
+        fs.mkdirSync(autorunDir, { recursive: true });
+    }
+
+    const luaPath = path.join(autorunDir, 'zz_voicemod_lan_voice.lua');
+    const luaCode = `-- ============================================================================
+-- Garry's Mod Asset Manager: Voicemod V3 (Morgan Freeman / Celestial Narrator)
+-- & 3-Way LAN Hands-Free Open Mic + Global All-Talk Broadcast Autopilot
+-- ============================================================================
+
+if SERVER then
+    local function EnforceLanAllTalk()
+        RunConsoleCommand("sv_voiceenable", "1")
+        RunConsoleCommand("sv_alltalk", "3")
+    end
+
+    EnforceLanAllTalk()
+    hook.Add("InitPostEntity", "GModManager_VoicemodLanAllTalk_Init", EnforceLanAllTalk)
+    hook.Add("PlayerInitialSpawn", "GModManager_VoicemodLanAllTalk_Spawn", function()
+        timer.Simple(0.5, EnforceLanAllTalk)
+    end)
+
+    -- Guarantee every player on the LAN hears your Morgan Freeman voice across
+    -- the entire map at full clear 2D broadcast volume (no distance dropoff!)
+    hook.Add("PlayerCanHearPlayersVoice", "GModManager_VoicemodLanAllTalk_Hook", function(listener, talker)
+        return true, false
+    end)
+end
+
+if CLIENT then
+    local cvarOpenMic = CreateClientConVar("gmod_openmic_enabled", "1", true, false, "Hands-Free Open Mic for Voicemod (1 = Always Live, 0 = Muted)")
+    local cvarVoiceHud = CreateClientConVar("gmod_voice_hud_enabled", "1", true, false, "Show Voicemod Live Mic HUD badge in bottom-right corner")
+
+    surface.CreateFont("GModVoicemod_HUDFont", {
+        font = "Tahoma",
+        size = 17,
+        weight = 800,
+        antialias = true,
+        extended = true
+    })
+
+    surface.CreateFont("GModVoicemod_HUDSub", {
+        font = "Tahoma",
+        size = 13,
+        weight = 600,
+        antialias = true,
+        extended = true
+    })
+
+    local function EnforceClientVoiceState()
+        RunConsoleCommand("voice_enable", "1")
+        RunConsoleCommand("voice_modenable", "1")
+        RunConsoleCommand("voice_scale", "1")
+        RunConsoleCommand("voice_forcemicrecord", "1")
+
+        if cvarOpenMic and cvarOpenMic:GetBool() then
+            RunConsoleCommand("+voicerecord")
+        else
+            RunConsoleCommand("-voicerecord")
+        end
+    end
+
+    hook.Add("InitPostEntity", "GModManager_VoicemodClient_Init", function()
+        timer.Simple(0.5, EnforceClientVoiceState)
+        timer.Simple(2.5, EnforceClientVoiceState)
+        timer.Simple(6.0, EnforceClientVoiceState)
+    end)
+
+    -- Keep Hands-Free Open Mic latched ON even after respawns, scoreboard, or menu closes
+    timer.Create("GModManager_VoicemodOpenMicKeeper", 1.2, 0, function()
+        if not IsValid(LocalPlayer()) then return end
+        RunConsoleCommand("voice_enable", "1")
+        RunConsoleCommand("voice_modenable", "1")
+        if cvarOpenMic and cvarOpenMic:GetBool() then
+            RunConsoleCommand("+voicerecord")
+        end
+    end)
+
+    concommand.Add("gmod_toggle_openmic", function()
+        local now = not (cvarOpenMic and cvarOpenMic:GetBool())
+        RunConsoleCommand("gmod_openmic_enabled", now and "1" or "0")
+        if now then
+            RunConsoleCommand("voice_enable", "1")
+            RunConsoleCommand("voice_modenable", "1")
+            RunConsoleCommand("voice_forcemicrecord", "1")
+            RunConsoleCommand("+voicerecord")
+            surface.PlaySound("buttons/button14.wav")
+            chat.AddText(Color(16, 185, 129), "[Voicemod LAN] ", Color(255, 255, 255), "🎙️ Hands-Free Open Mic: LIVE (Morgan Freeman Broadcast ON)")
+        else
+            RunConsoleCommand("-voicerecord")
+            surface.PlaySound("buttons/button10.wav")
+            chat.AddText(Color(245, 158, 11), "[Voicemod LAN] ", Color(255, 255, 255), "🔇 Microphone MUTED (Press X or Hold D-Pad Right to unmute)")
+        end
+    end)
+
+    -- Sleek bottom-right HUD pill showing Live Open Mic status & voice level meter
+    hook.Add("HUDPaint", "GModManager_VoicemodLiveHUD", function()
+        if not cvarVoiceHud or not cvarVoiceHud:GetBool() then return end
+        local ply = LocalPlayer()
+        if not IsValid(ply) then return end
+
+        local isOpen = cvarOpenMic and cvarOpenMic:GetBool()
+        local vol = ply.VoiceVolume and ply:VoiceVolume() or 0
+        local isSpeaking = vol > 0.01
+
+        local boxW, boxH = 265, 44
+        local boxX = ScrW() - boxW - 22
+        local boxY = ScrH() - boxH - 18
+
+        local bgCol = isOpen and Color(15, 23, 42, 215) or Color(30, 20, 25, 210)
+        local borderCol = isOpen and (isSpeaking and Color(52, 211, 153, 255) or Color(16, 185, 129, 185)) or Color(239, 68, 68, 180)
+
+        draw.RoundedBox(10, boxX, boxY, boxW, boxH, bgCol)
+        surface.SetDrawColor(borderCol)
+        surface.DrawOutlinedRect(boxX, boxY, boxW, boxH, isSpeaking and 2 or 1)
+
+        -- Status dot
+        local dotCol = isOpen and (isSpeaking and Color(52, 211, 153) or Color(16, 185, 129)) or Color(239, 68, 68)
+        draw.RoundedBox(6, boxX + 12, boxY + 11, 12, 12, dotCol)
+
+        local titleTxt = isOpen and "🎙️ VOICEMOD: OPEN MIC" or "🔇 VOICEMOD: MIC MUTED"
+        draw.SimpleText(titleTxt, "GModVoicemod_HUDFont", boxX + 30, boxY + 7, color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+
+        local subTxt = isOpen and "Hold D-Pad Right or Press X to Mute" or "Hold D-Pad Right or Press X to Talk"
+        draw.SimpleText(subTxt, "GModVoicemod_HUDSub", boxX + 30, boxY + 25, Color(148, 163, 184), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+
+        -- Live voice volume meter bar at bottom of pill
+        if isOpen then
+            local meterW = math.Clamp(vol * 3.5, 0, 1) * (boxW - 20)
+            if meterW > 2 then
+                draw.RoundedBox(2, boxX + 10, boxY + boxH - 5, meterW, 3, Color(52, 211, 153, 240))
+            end
+        end
+    end)
+end
+`;
+
+    fs.writeFileSync(luaPath, luaCode, 'utf8');
+
+    // Also update autoexec.cfg & config.cfg with LAN voice settings
+    try {
+        const cfgDir = path.join(gmodInfo.garrysmodDir, 'cfg');
+        if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
+        const autoexecPath = path.join(cfgDir, 'autoexec.cfg');
+        let autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
+        const voiceCfgBlock = `// --- Voicemod V3 & LAN All-Talk Hands-Free Voice ---
+sv_voiceenable "1"
+sv_alltalk "3"
+voice_enable "1"
+voice_modenable "1"
+voice_forcemicrecord "1"
+voice_scale "1.0"
+gmod_openmic_enabled "1"
+bind "x" "gmod_toggle_openmic"`;
+
+        if (autoexecContent.includes('// --- Voicemod V3 & LAN All-Talk')) {
+            autoexecContent = autoexecContent.replace(/\/\/ --- Voicemod V3 & LAN All-Talk[\s\S]*?bind "x" "gmod_toggle_openmic"/, voiceCfgBlock);
+        } else {
+            autoexecContent += `\n\n${voiceCfgBlock}\n`;
+        }
+        fs.writeFileSync(autoexecPath, autoexecContent, 'utf8');
+    } catch (_) {}
+
+    return { success: true, luaPath };
+}
+
+function getVoicemodStatus() {
+    const { execSync } = require('child_process');
+    const installed = fs.existsSync(VOICEMOD_EXE_PATH);
+    let running = false;
+    try {
+        const out = execSync('tasklist /FI "IMAGENAME eq Voicemod.exe" /NH', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        running = out.toLowerCase().includes('voicemod.exe');
+    } catch (_) {}
+
+    let inputDeviceName = 'BEHRINGER UMC 404HD / Headset Mic';
+    try {
+        if (fs.existsSync(VOICEMOD_SETTINGS_INI)) {
+            const ini = fs.readFileSync(VOICEMOD_SETTINGS_INI, 'utf8');
+            const m = ini.match(/"inputDevice":\{"deviceId":"[^"]+","deviceName":"([^"]+)"/);
+            if (m && m[1]) inputDeviceName = m[1];
+        }
+    } catch (_) {}
+
+    return {
+        installed,
+        running,
+        exePath: VOICEMOD_EXE_PATH,
+        voiceName: 'Celestial Narrator (Morgan Freeman)',
+        voiceId: 'df9fc8a5-0ab5-424a-bccf-d12c7da191b6',
+        inputDeviceName,
+        openMicEnabled: true,
+        allTalkEnabled: true
+    };
+}
+
+async function activateVoicemodForGmod({ launchApp = true } = {}) {
+    const { spawn, execFileSync } = require('child_process');
+    if (!currentGmodInfo) currentGmodInfo = detectGmodPaths();
+    installVoicemodLanVoiceAutopilot(currentGmodInfo);
+
+    let status = getVoicemodStatus();
+    let launchedNow = false;
+
+    if (launchApp && status.installed && !status.running) {
+        try {
+            const child = spawn(VOICEMOD_EXE_PATH, [], {
+                cwd: path.dirname(VOICEMOD_EXE_PATH),
+                detached: true,
+                stdio: 'ignore'
+            });
+            child.unref();
+            launchedNow = true;
+            // Wait briefly for Voicemod to initialize its virtual audio cable
+            await new Promise(r => setTimeout(r, 2200));
+        } catch (err) {
+            console.warn('Could not spawn Voicemod.exe:', err);
+        }
+    }
+
+    // Use Voicemod's official AudioEndPointTool.exe to make Microphone (Voicemod) visible
+    // and lock it as Windows Default Capture Device across all 3 roles (0=Console, 1=Multimedia, 2=Communications)
+    let lockedDefaultMic = false;
+    if (fs.existsSync(VOICEMOD_ENDPOINT_TOOL)) {
+        try {
+            execFileSync(VOICEMOD_ENDPOINT_TOOL, ['setvisibility', '--id', VOICEMOD_MIC_ID, '--visible', 'true'], { stdio: 'ignore' });
+            execFileSync(VOICEMOD_ENDPOINT_TOOL, ['setdefault', '--id', VOICEMOD_MIC_ID, '--flow', '1', '--role', '0'], { stdio: 'ignore' });
+            execFileSync(VOICEMOD_ENDPOINT_TOOL, ['setdefault', '--id', VOICEMOD_MIC_ID, '--flow', '1', '--role', '1'], { stdio: 'ignore' });
+            execFileSync(VOICEMOD_ENDPOINT_TOOL, ['setdefault', '--id', VOICEMOD_MIC_ID, '--flow', '1', '--role', '2'], { stdio: 'ignore' });
+            lockedDefaultMic = true;
+        } catch (err) {
+            console.warn('AudioEndPointTool warning:', err);
+        }
+    }
+
+    status = getVoicemodStatus();
+    return {
+        success: true,
+        ...status,
+        launchedNow,
+        lockedDefaultMic
+    };
+}
+
+ipcMain.handle('get-voicemod-status', async () => {
+    return getVoicemodStatus();
+});
+
+ipcMain.handle('activate-voicemod', async (event, options = {}) => {
+    return await activateVoicemodForGmod(options);
 });
 
 

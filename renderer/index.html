@@ -913,6 +913,28 @@
                 <button class="modal-close" id="btnClosePrivateGameModal">&times;</button>
             </div>
             <div class="modal-body" style="padding-top: 14px;">
+                <!-- Voicemod V3 & LAN Voice Autopilot Banner -->
+                <div style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(15, 23, 42, 0.85)); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 12px 15px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 260px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
+                            <span style="font-size: 13px; font-weight: 800; color: #34d399;">🎙️ Voicemod V3 &amp; LAN Voice Autopilot (Morgan Freeman Mode)</span>
+                            <span id="badgeVoicemodStatus" style="font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4);">Hands-Free Open Mic + All-Talk Ready</span>
+                        </div>
+                        <div id="lblVoicemodSubStatus" style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
+                            Voice: <strong>Celestial Narrator (Morgan Freeman)</strong> • Open Mic latched ON automatically (Hold <strong>D-Pad Right</strong> or press <strong>X</strong> in-game to mute/unmute).
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #e2e8f0; cursor: pointer; user-select: none;">
+                            <input type="checkbox" id="chkAutoVoicemodOnLaunch" checked>
+                            <span>Auto-lock Voicemod on launch</span>
+                        </label>
+                        <button class="btn btn-primary btn-xs" id="btnActivateVoicemodNow" style="background: linear-gradient(135deg, #10b981, #059669); border: none; padding: 6px 12px; font-weight: 700; font-size: 11.5px;">
+                            🎙️ Launch &amp; Lock Voicemod Mic
+                        </button>
+                    </div>
+                </div>
+
                 <div style="display: grid; grid-template-columns: 1.05fr 1fr; gap: 18px; align-items: start;">
                     <!-- Left Column: Host a Private Game -->
                     <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 10px; padding: 16px;">

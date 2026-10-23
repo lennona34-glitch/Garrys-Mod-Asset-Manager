@@ -11,7 +11,17 @@ contextBridge.exposeInMainWorld('api', {
     // Maps & Private / Local Multiplayer
     scanMaps: () => ipcRenderer.invoke('scan-maps'),
     launchMap: (mapName, options) => ipcRenderer.invoke('launch-map', { mapName, options }),
-    connectToServer: (payload) => ipcRenderer.invoke('connect-to-server', payload),
+    connectToServer: (addressOrPayload, options = {}) => {
+        if (typeof addressOrPayload === 'string') {
+            return ipcRenderer.invoke('connect-to-server', {
+                address: addressOrPayload,
+                password: options.password || '',
+                autoVoicemod: options.autoVoicemod,
+                options
+            });
+        }
+        return ipcRenderer.invoke('connect-to-server', addressOrPayload);
+    },
     getLocalNetworkInfo: () => ipcRenderer.invoke('get-local-network-info'),
     scanLanGames: () => ipcRenderer.invoke('scan-lan-games'),
     extractMap: (gmaPath, internalMapPath) => ipcRenderer.invoke('extract-map', { gmaPath, internalMapPath }),
@@ -59,6 +69,8 @@ contextBridge.exposeInMainWorld('api', {
     applyControllerTuning: (preset) => ipcRenderer.invoke('apply-controller-tuning', preset),
     getQMenuZoom: () => ipcRenderer.invoke('get-qmenu-zoom'),
     applyQMenuZoom: (options) => ipcRenderer.invoke('apply-qmenu-zoom', options),
+    getVoicemodStatus: () => ipcRenderer.invoke('get-voicemod-status'),
+    activateVoicemod: (options) => ipcRenderer.invoke('activate-voicemod', options),
     onNavmeshCompleted: (callback) => ipcRenderer.on('navmesh-completed', (_event, mapName) => callback(mapName)),
     onNavmeshProgress: (callback) => ipcRenderer.on('navmesh-progress', (_event, data) => callback(data)),
 

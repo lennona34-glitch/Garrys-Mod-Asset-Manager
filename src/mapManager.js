@@ -364,11 +364,11 @@ async function launchMap(gmodInfo, mapName, options = {}) {
     // Multiplayer Host Mode configuration (must precede +map so Source allocates multiplayer slots)
     const playersCount = Math.max(2, Math.min(32, parseInt(maxPlayers, 10) || 8));
     if (hostMode === 'lan') {
-        args.push('+sv_lan', '1', '+maxplayers', String(playersCount));
+        args.push('+sv_lan', '1', '+maxplayers', String(playersCount), '+sv_voiceenable', '1', '+sv_alltalk', '3');
         if (serverName) args.push('+hostname', serverName);
         if (serverPassword) args.push('+sv_password', serverPassword);
     } else if (hostMode === 'p2p') {
-        args.push('+sv_lan', '0', '+p2p_enabled', '1', '+p2p_friendsonly', '1', '+maxplayers', String(playersCount));
+        args.push('+sv_lan', '0', '+p2p_enabled', '1', '+p2p_friendsonly', '1', '+maxplayers', String(playersCount), '+sv_voiceenable', '1', '+sv_alltalk', '3');
         if (serverName) args.push('+hostname', serverName);
         if (serverPassword) args.push('+sv_password', serverPassword);
     } else {
@@ -376,8 +376,8 @@ async function launchMap(gmodInfo, mapName, options = {}) {
     }
 
     args.push('+map', mapName);
-    // Guarantee wireless controller is initialized on boot with modern layout
-    args.push('+joystick', '1', '+joy_advanced', '1', '+exec', '360controller');
+    // Guarantee wireless controller & voice chat are initialized on boot
+    args.push('+joystick', '1', '+joy_advanced', '1', '+voice_enable', '1', '+voice_modenable', '1', '+voice_forcemicrecord', '1', '+exec', '360controller');
 
     if (extraArgs && extraArgs.trim()) {
         args.push(...extraArgs.trim().split(/\s+/));
@@ -458,7 +458,7 @@ async function connectToServer(gmodInfo, { address, password = '', options = {} 
         args.push('-w', String(targetW), '-h', String(targetH));
     }
 
-    args.push('+joystick', '1', '+joy_advanced', '1', '+exec', '360controller');
+    args.push('+joystick', '1', '+joy_advanced', '1', '+voice_enable', '1', '+voice_modenable', '1', '+voice_forcemicrecord', '1', '+exec', '360controller');
     if (password && password.trim()) {
         args.push('+password', password.trim());
     }

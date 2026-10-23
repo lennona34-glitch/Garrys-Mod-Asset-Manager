@@ -4320,6 +4320,10 @@ function launchSelectedMap(mapName, customHostOpts = null) {
     if (hostMode === 'lan') modeLabel = `Local LAN Server (${maxPlayers} Players)`;
     else if (hostMode === 'p2p') modeLabel = `Steam Friends P2P (${maxPlayers} Players)`;
 
+    const autoVoicemod = (customHostOpts && customHostOpts.autoVoicemod !== undefined)
+        ? customHostOpts.autoVoicemod
+        : (document.getElementById('chkAutoVoicemodOnLaunch')?.checked !== false);
+
     showToast(`Launching ${mapName} — ${modeLabel} (${resLabel})...`, 'info');
     window.api.launchMap(mapName, {
         novid,
@@ -4333,13 +4337,14 @@ function launchSelectedMap(mapName, customHostOpts = null) {
         hostMode,
         maxPlayers,
         serverName,
-        serverPassword
+        serverPassword,
+        autoVoicemod
     })
         .then(() => {
             if (hostMode === 'lan') {
-                showToast(`🏠 Local LAN Server started on ${mapName}! Other PCs on your Wi-Fi can scan or type connect <your-ip>:27015`, 'success');
+                showToast(`🏠 Local LAN Server started on ${mapName}! Voicemod Open Mic + All-Talk Ready!`, 'success');
             } else if (hostMode === 'p2p') {
-                showToast(`🤝 Private Steam P2P Server started on ${mapName}! Friends can right-click your name in Steam -> Join Game.`, 'success');
+                showToast(`🤝 Private Steam P2P Server started on ${mapName}! Voicemod Open Mic + All-Talk Ready!`, 'success');
             } else {
                 showToast(`Garry's Mod launched with map: ${mapName}!`, 'success');
             }
@@ -4349,7 +4354,36 @@ function launchSelectedMap(mapName, customHostOpts = null) {
 
 let cachedLocalLanIp = '127.0.0.1';
 
+async function refreshVoicemodStatusUI() {
+    if (!window.api.getVoicemodStatus) return;
+    const badge = document.getElementById('badgeVoicemodStatus');
+    const sub = document.getElementById('lblVoicemodSubStatus');
+    const btn = document.getElementById('btnActivateVoicemodNow');
+    try {
+        const st = await window.api.getVoicemodStatus();
+        if (badge) {
+            if (st.running) {
+                badge.textContent = '🟢 Voicemod Live & Locked';
+                badge.style.background = 'rgba(16, 185, 129, 0.25)';
+                badge.style.color = '#34d399';
+            } else if (st.installed) {
+                badge.textContent = '⚡ Ready (Auto-Starts on Launch)';
+                badge.style.background = 'rgba(56, 189, 248, 0.2)';
+                badge.style.color = '#38bdf8';
+            }
+        }
+        if (sub) {
+            sub.innerHTML = `Voice: <strong>${st.voiceName}</strong> • Input: <code>${st.inputDeviceName}</code> • <strong>Hands-Free Open Mic ON</strong> (Hold <strong>D-Pad Right</strong> or press <strong>X</strong> to mute).`;
+        }
+        if (btn) {
+            btn.textContent = st.running ? '🎙️ Re-Lock Voicemod Default Mic' : '🎙️ Launch & Lock Voicemod Mic';
+        }
+    } catch (_) {}
+}
+
 async function refreshPrivateGameModalInfo() {
+    refreshVoicemodStatusUI();
+
     // 1. Populate Map Dropdown from state.maps
     const selMap = document.getElementById('selModalHostMap');
     if (selMap && Array.isArray(state.maps) && state.maps.length > 0) {
@@ -4466,6 +4500,8 @@ function triggerDirectConnect(addressOverride = null) {
     else if (resVal === '2560x1440') { width = 2560; height = 1440; }
     else if (resVal === '1920x1080') { width = 1920; height = 1080; }
 
+    const autoVoicemod = document.getElementById('chkAutoVoicemodOnLaunch')?.checked !== false;
+
     showToast(`Launching Garry's Mod & connecting to ${cleanAddr}...`, 'info');
     window.api.connectToServer(cleanAddr, {
         password,
@@ -4474,10 +4510,11 @@ function triggerDirectConnect(addressOverride = null) {
         windowed,
         width,
         height,
-        extraArgs
+        extraArgs,
+        autoVoicemod
     })
         .then(() => {
-            showToast(`Connecting to server ${cleanAddr}!`, 'success');
+            showToast(`Connecting to server ${cleanAddr} (Voicemod Open Mic Ready)!`, 'success');
             document.getElementById('privateGameModal')?.classList.remove('active');
         })
         .catch(err => showToast(`Connection launch failed: ${err.message}`, 'error'));
@@ -4502,6 +4539,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const btnActivateVoicemod = document.getElementById('btnActivateVoicemodNow');
+    if (btnActivateVoicemod && window.api.activateVoicemod) {
+        btnActivateVoicemod.addEventListener('click', async () => {
+            btnActivateVoicemod.disabled = true;
+            btnActivateVoicemod.textContent = '⏳ Locking Voicemod...';
+            try {
+                const res = await window.api.activateVoicemod({ launchApp: true });
+                if (res && res.success) {
+                    showToast(`🎙️ Voicemod V3 (${res.voiceName}) launched & locked as Windows Default Mic + GMod Hands-Free Open Mic enabled!`, 'success');
+                    await refreshVoicemodStatusUI();
+                }
+            } catch (err) {
+                showToast(`Voicemod activation error: ${err.message}`, 'error');
+            } finally {
+                btnActivateVoicemod.disabled = false;
+                await refreshVoicemodStatusUI();
+            }
+        });
+    }
+
     const btnCopyIp = document.getElementById('btnCopyMyConnectCmd');
     if (btnCopyIp) {
         btnCopyIp.addEventListener('click', () => {
@@ -4522,6 +4579,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const maxPlayers = parseInt(document.getElementById('selModalMaxPlayers')?.value || '8', 10);
             const serverName = document.getElementById('inpModalServerName')?.value || 'Private GMod Party';
             const serverPassword = document.getElementById('inpModalHostPassword')?.value || '';
+            const autoVoicemod = document.getElementById('chkAutoVoicemodOnLaunch')?.checked !== false;
 
             // Sync quick selector on Maps Hub too
             const quickSel = document.getElementById('selQuickHostMode');
@@ -4532,7 +4590,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 hostMode,
                 maxPlayers,
                 serverName,
-                serverPassword
+                serverPassword,
+                autoVoicemod
             });
         });
     }
