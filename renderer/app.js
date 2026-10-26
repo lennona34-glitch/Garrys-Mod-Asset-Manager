@@ -723,13 +723,13 @@ function setupEventHandlers() {
         }
     } catch (_) {}
 
-    // Couch / 40"+ TV 'Q' Menu & App Zoom Controls
-    state.couchZoomScale = 2.25;
-    state.couchMagnifierEnabled = true;
+    // Couch / 40"+ TV 'Q' Menu Zoom Controls (250% Default, No App Zoom or Hover Highlights)
+    state.couchZoomScale = 2.5;
+    state.couchMagnifierEnabled = false;
 
     const syncQMenuZoomUI = (settings) => {
         if (!settings) return;
-        const numericScale = Number(settings.scale) || 2.25;
+        const numericScale = Number(settings.scale) || 2.5;
         state.couchZoomScale = numericScale;
         const scaleStr = String(numericScale);
 
@@ -739,35 +739,6 @@ function setupEventHandlers() {
         document.querySelectorAll('#qmenuZoomChips .chip').forEach(c => {
             c.classList.toggle('active', c.getAttribute('data-qzoom') === scaleStr);
         });
-
-        // Sync top-header 40"+ Couch TV Zoom Bar buttons
-        document.querySelectorAll('#headerCouchZoomBar .btn-couch-zoom').forEach(btn => {
-            const isAct = Number(btn.getAttribute('data-header-qzoom')) === numericScale;
-            btn.classList.toggle('active', isAct);
-            btn.style.background = isAct ? '#10b981' : 'rgba(30, 41, 59, 0.9)';
-            btn.style.color = isAct ? '#052e16' : '#cbd5e1';
-            btn.style.borderColor = isAct ? '#34d399' : 'rgba(148,163,184,0.25)';
-            btn.style.fontWeight = isAct ? '800' : '700';
-        });
-
-        const chkMag = document.getElementById('chkQMenuMagnifier');
-        if (chkMag && settings.magnifier !== undefined) {
-            chkMag.checked = Boolean(settings.magnifier);
-            state.couchMagnifierEnabled = Boolean(settings.magnifier);
-        }
-
-        const btnHeaderPreview = document.getElementById('btnHeaderBigPreviewToggle');
-        if (btnHeaderPreview) {
-            const magOn = state.couchMagnifierEnabled !== false;
-            btnHeaderPreview.textContent = magOn ? '🔎 Big Preview: ON' : '🔎 Big Preview: OFF';
-            btnHeaderPreview.style.background = magOn ? 'rgba(14, 165, 233, 0.25)' : 'rgba(30, 41, 59, 0.85)';
-            btnHeaderPreview.style.color = magOn ? '#38bdf8' : '#94a3b8';
-            btnHeaderPreview.style.borderColor = magOn ? 'rgba(56, 189, 248, 0.5)' : 'rgba(148, 163, 184, 0.25)';
-            if (!magOn) {
-                const magCard = document.getElementById('appCouchMagnifierCard');
-                if (magCard) magCard.style.display = 'none';
-            }
-        }
 
         const chkTog = document.getElementById('chkQMenuToggle');
         if (chkTog && settings.toggleMode !== undefined) chkTog.checked = Boolean(settings.toggleMode);
@@ -783,9 +754,9 @@ function setupEventHandlers() {
         let scale = scaleOverride;
         if (scale === null) {
             const activeChip = document.querySelector('#qmenuZoomChips .chip.active');
-            scale = activeChip ? Number(activeChip.getAttribute('data-qzoom')) : (state.couchZoomScale || 2.25);
+            scale = activeChip ? Number(activeChip.getAttribute('data-qzoom')) : (state.couchZoomScale || 2.5);
         }
-        const magnifier = document.getElementById('chkQMenuMagnifier') ? document.getElementById('chkQMenuMagnifier').checked : true;
+        const magnifier = false;
         const toggleMode = document.getElementById('chkQMenuToggle') ? document.getElementById('chkQMenuToggle').checked : true;
 
         if (window.api.applyQMenuZoom) {
@@ -793,9 +764,9 @@ function setupEventHandlers() {
                 const res = await window.api.applyQMenuZoom({ scale, magnifier, toggleMode });
                 syncQMenuZoomUI(res);
                 const pct = Math.round((res.scale || scale) * 100);
-                showToast(`🛋️ 40"+ Couch TV Zoom set to ${pct}% (App + GMod Singleplayer & LAN Menus synced, Big Preview ${magnifier ? 'ON' : 'OFF'})!`, 'success');
+                showToast(`🛋️ Garry's Mod Q-Menu Zoom locked at ${pct}% across Singleplayer, LAN & Online!`, 'success');
             } catch (err) {
-                showToast('Failed to apply Couch TV zoom: ' + err.message, 'error');
+                showToast('Failed to apply Q-Menu zoom: ' + err.message, 'error');
             }
         }
     };
@@ -818,133 +789,8 @@ function setupEventHandlers() {
         });
     });
 
-    // Top-Header 40"+ Couch TV Zoom Bar buttons
-    document.querySelectorAll('#headerCouchZoomBar .btn-couch-zoom').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const val = Number(btn.getAttribute('data-header-qzoom'));
-            saveAndApplyQMenuZoom(val);
-        });
-    });
-
-    const btnHeaderBigPreview = document.getElementById('btnHeaderBigPreviewToggle');
-    if (btnHeaderBigPreview) {
-        btnHeaderBigPreview.addEventListener('click', () => {
-            const chkMag = document.getElementById('chkQMenuMagnifier');
-            if (chkMag) {
-                chkMag.checked = !chkMag.checked;
-            }
-            saveAndApplyQMenuZoom(null);
-        });
-    }
-
-    document.getElementById('chkQMenuMagnifier')?.addEventListener('change', () => saveAndApplyQMenuZoom(null));
     document.getElementById('chkQMenuToggle')?.addEventListener('change', () => saveAndApplyQMenuZoom(null));
     document.getElementById('btnApplyQMenuZoom')?.addEventListener('click', () => saveAndApplyQMenuZoom(null));
-
-    setupAppCouchHoverMagnifier();
-}
-
-function setupAppCouchHoverMagnifier() {
-    const magCard = document.getElementById('appCouchMagnifierCard');
-    const magImg = document.getElementById('appCouchMagImg');
-    const magFallback = document.getElementById('appCouchMagFallback');
-    const magBadge = document.getElementById('appCouchMagBadge');
-    const magMeta = document.getElementById('appCouchMagMeta');
-    const magTitle = document.getElementById('appCouchMagTitle');
-    const magSub = document.getElementById('appCouchMagSub');
-    if (!magCard) return;
-
-    const updateMagnifierSide = (clientX) => {
-        if (clientX > window.innerWidth * 0.56) {
-            magCard.style.right = 'auto';
-            magCard.style.left = '24px';
-        } else {
-            magCard.style.left = 'auto';
-            magCard.style.right = '24px';
-        }
-    };
-
-    document.addEventListener('mousemove', (e) => {
-        if (state.couchMagnifierEnabled === false) {
-            magCard.style.display = 'none';
-            return;
-        }
-        if (magCard.style.display === 'block') {
-            updateMagnifierSide(e.clientX);
-        }
-    });
-
-    document.addEventListener('mouseover', (e) => {
-        if (state.couchMagnifierEnabled === false) {
-            magCard.style.display = 'none';
-            return;
-        }
-
-        const item = e.target.closest('.map-card, .addon-row, .workshop-card, .studio-char-item');
-        if (!item) {
-            magCard.style.display = 'none';
-            return;
-        }
-
-        let title = '';
-        let sub = '';
-        let badge = 'ITEM';
-        let meta = '';
-        let imgSrc = '';
-        let fallbackText = 'λ';
-
-        if (item.classList.contains('map-card')) {
-            title = item.querySelector('.map-card-title')?.textContent?.trim() || 'Map';
-            sub = item.querySelector('.map-card-subtitle')?.textContent?.trim() || '';
-            badge = item.querySelector('.badge-gamemode')?.textContent?.trim() || 'MAP';
-            meta = item.querySelector('.pill-nav')?.textContent?.trim() || item.querySelector('.badge-source')?.textContent?.trim() || '';
-            imgSrc = item.querySelector('.map-card-thumb img')?.getAttribute('src') || '';
-            fallbackText = '🗺️';
-        } else if (item.classList.contains('addon-row')) {
-            title = item.querySelector('.addon-title')?.textContent?.trim() || 'Addon';
-            sub = item.querySelector('.addon-meta')?.textContent?.trim() || '';
-            badge = item.querySelector('.badge')?.textContent?.trim() || 'ADDON';
-            const isChecked = item.querySelector('input[type="checkbox"]')?.checked;
-            meta = isChecked ? '🟢 Enabled' : '⚪ Disabled';
-            imgSrc = item.querySelector('img')?.getAttribute('src') || '';
-            fallbackText = '📦';
-        } else if (item.classList.contains('workshop-card')) {
-            title = item.querySelector('.ws-card-title, .map-card-title, h4')?.textContent?.trim() || 'Workshop Item';
-            sub = item.querySelector('.ws-card-author, .map-card-subtitle')?.textContent?.trim() || 'Steam Workshop';
-            badge = 'WORKSHOP';
-            imgSrc = item.querySelector('img')?.getAttribute('src') || '';
-            fallbackText = '🌐';
-        } else if (item.classList.contains('studio-char-item')) {
-            title = item.querySelector('div[style*="font-weight: 700"], strong')?.textContent?.trim() || item.textContent.trim();
-            sub = '2D Asset Studio Character';
-            badge = '2D NEXTBOT';
-            imgSrc = item.querySelector('img')?.getAttribute('src') || '';
-            fallbackText = '🎨';
-        }
-
-        if (!title) {
-            magCard.style.display = 'none';
-            return;
-        }
-
-        magTitle.textContent = title;
-        magSub.textContent = sub;
-        magBadge.textContent = badge;
-        magMeta.textContent = meta;
-
-        if (imgSrc) {
-            magImg.src = imgSrc;
-            magImg.style.display = 'block';
-            magFallback.style.display = 'none';
-        } else {
-            magImg.style.display = 'none';
-            magFallback.style.display = 'block';
-            magFallback.textContent = fallbackText;
-        }
-
-        updateMagnifierSide(e.clientX || 0);
-        magCard.style.display = 'block';
-    });
 }
 
 // ---------------- MAPS HUB ----------------

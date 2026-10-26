@@ -81,17 +81,7 @@
                     <input type="text" id="globalSearchInput" placeholder="Search maps, addons, gamemodes, authors...">
                     <button class="btn-clear-search" id="btnClearSearch" style="display:none;">&times;</button>
                 </div>
-                <div class="header-actions" style="gap: 8px; flex-wrap: wrap;">
-                    <!-- Integrated 40"+ Couch TV Zoom Bar (Syncs App UI + GMod Singleplayer & LAN Menus) -->
-                    <div id="headerCouchZoomBar" style="display: flex; align-items: center; gap: 4px; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(52, 211, 153, 0.45); border-radius: 8px; padding: 3px 7px;" title="40+ Inch Couch TV Mode: Scales BOTH this App and Garry's Mod Menus (Singleplayer & Local LAN)">
-                        <span style="font-size: 11px; font-weight: 800; color: #34d399; margin-right: 3px; white-space: nowrap;">🛋️ TV ZOOM:</span>
-                        <button type="button" class="btn-couch-zoom" data-header-qzoom="1" style="background: rgba(30, 41, 59, 0.9); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.25); border-radius: 5px; padding: 3px 6px; font-size: 11px; font-weight: 700; cursor: pointer;">100%</button>
-                        <button type="button" class="btn-couch-zoom" data-header-qzoom="1.5" style="background: rgba(30, 41, 59, 0.9); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.25); border-radius: 5px; padding: 3px 6px; font-size: 11px; font-weight: 700; cursor: pointer;">150%</button>
-                        <button type="button" class="btn-couch-zoom" data-header-qzoom="2" style="background: rgba(30, 41, 59, 0.9); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.25); border-radius: 5px; padding: 3px 6px; font-size: 11px; font-weight: 700; cursor: pointer;">200%</button>
-                        <button type="button" class="btn-couch-zoom active" data-header-qzoom="2.25" style="background: #10b981; color: #052e16; border: 1px solid #34d399; border-radius: 5px; padding: 3px 7px; font-size: 11px; font-weight: 800; cursor: pointer;">225% Couch</button>
-                        <button type="button" class="btn-couch-zoom" data-header-qzoom="2.5" style="background: rgba(30, 41, 59, 0.9); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.25); border-radius: 5px; padding: 3px 6px; font-size: 11px; font-weight: 700; cursor: pointer;">250%</button>
-                        <button type="button" id="btnHeaderBigPreviewToggle" style="background: rgba(14, 165, 233, 0.25); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.5); border-radius: 5px; padding: 3px 7px; font-size: 11px; font-weight: 700; cursor: pointer; margin-left: 2px; white-space: nowrap;" title="Toggle Giant Hover Magnifier Preview Card in both this App and Garry's Mod">🔎 Big Preview: ON</button>
-                    </div>
+                <div class="header-actions">
                     <button class="btn btn-icon" id="btnToggleZen" title="Toggle Fullscreen Zen Mode (F11)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
                     </button>
@@ -125,12 +115,12 @@
                         <label class="checkbox-label">
                             <input type="checkbox" id="chkOnlyNavMesh"> Has NavMesh
                         </label>
-                        <select id="selQuickQMenuZoom" class="select-styled" title="Scale up Garry's Mod 'Q' Spawnmenu & App UI for 40+ inch TV / Couch play (Singleplayer & LAN)" style="border-color: rgba(52, 211, 153, 0.4);">
-                            <option value="1">🔍 Couch TV Zoom: 100% (Desktop)</option>
-                            <option value="1.5">🔍 Couch TV Zoom: 150% (Large)</option>
-                            <option value="2">🔍 Couch TV Zoom: 200% (TV Mode)</option>
-                            <option value="2.25" selected>🔍 Couch TV Zoom: 225% (Couch Recommended)</option>
-                            <option value="2.5">🔍 Couch TV Zoom: 250% (Extra Huge Max)</option>
+                        <select id="selQuickQMenuZoom" class="select-styled" title="Scale up Garry's Mod 'Q' Spawnmenu icons, text, and categories for TV / Couch play (Singleplayer, LAN & Online)" style="border-color: rgba(52, 211, 153, 0.4);">
+                            <option value="1">🔍 GMod Q-Menu: 100% (Desktop)</option>
+                            <option value="1.5">🔍 GMod Q-Menu: 150% (Large)</option>
+                            <option value="2">🔍 GMod Q-Menu: 200% (TV Mode)</option>
+                            <option value="2.25">🔍 GMod Q-Menu: 225% (Couch)</option>
+                            <option value="2.5" selected>🔍 GMod Q-Menu: 250% (Max Couch / TV)</option>
                         </select>
                         <select id="selQuickHostMode" class="select-styled" title="Choose whether map card Launch buttons start Singleplayer, Local LAN, or Steam Friends P2P" style="border-color: rgba(56, 189, 248, 0.35);">
                             <option value="singleplayer">Launch Mode: 👤 Solo Singleplayer</option>
@@ -736,27 +726,23 @@
 
                     <div class="card settings-card" id="cardQMenuZoom">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <h3 style="margin-bottom: 0;">🔍 Couch / 40"+ TV 'Q' Menu &amp; App Zoom</h3>
-                            <span id="qmenuZoomStatusBadge" class="badge" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); padding: 4px 8px; font-size: 11px;">225% Couch TV Active</span>
+                            <h3 style="margin-bottom: 0;">🔍 Couch / 40"+ TV Garry's Mod 'Q' Menu Zoom</h3>
+                            <span id="qmenuZoomStatusBadge" class="badge" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); padding: 4px 8px; font-size: 11px;">250% Q-Menu Active</span>
                         </div>
-                        <p class="card-desc">Enlarges both this App and Garry's Mod's Spawnmenu (<code>Q</code> / D-Pad Left) + Right-Side Tool &amp; Options Panels across <strong>Singleplayer &amp; Local LAN Games</strong> for 40"+ living-room TV play: scales up NPC, NextBot, Weapon, Entity, and Prop tiles up to 4x–6x larger, widens the right-side Options panel with huge readable text, and shows a <strong>Giant Hover Magnifier Card</strong> in both the App and Garry's Mod.</p>
+                        <p class="card-desc">Enlarges Garry's Mod's Spawnmenu (<code>Q</code> / D-Pad Left) + Right-Side Tool &amp; Options Panels across <strong>Singleplayer, Local LAN &amp; Online Games</strong> for 40"+ living-room TV play, and suppresses top-left Lua error popups from cutting across NPCs, Weapons, and Vehicles.</p>
 
                         <div class="form-group" style="margin-top: 14px; margin-bottom: 14px;">
-                            <label style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; display: block;">Choose 40"+ Couch TV Zoom Level (Scales GMod Menus + App UI):</label>
+                            <label style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; display: block;">Choose Garry's Mod Q-Menu Zoom Level:</label>
                             <div class="filter-chips" id="qmenuZoomChips">
                                 <div class="chip" data-qzoom="1">100% Normal (Desktop)</div>
                                 <div class="chip" data-qzoom="1.5">150% Large</div>
                                 <div class="chip" data-qzoom="2">200% TV Mode</div>
-                                <div class="chip active" data-qzoom="2.25">225% Couch Max (Recommended)</div>
-                                <div class="chip" data-qzoom="2.5">250% Extra Huge</div>
+                                <div class="chip" data-qzoom="2.25">225% Couch</div>
+                                <div class="chip active" data-qzoom="2.5">250% Max Couch / TV (Recommended)</div>
                             </div>
                         </div>
 
                         <div style="display: flex; flex-direction: column; gap: 10px; background: rgba(14, 165, 233, 0.05); border: 1px solid rgba(14, 165, 233, 0.15); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
-                            <label class="checkbox-label" style="cursor: pointer;">
-                                <input type="checkbox" id="chkQMenuMagnifier" checked>
-                                <span><strong>🔎 Giant Hover Magnifier Preview Card</strong> — Shows a huge 340×390 high-contrast preview &amp; 28pt title card in the corner whenever you point at an item in the Q-Menu.</span>
-                            </label>
                             <label class="checkbox-label" style="cursor: pointer;">
                                 <input type="checkbox" id="chkQMenuToggle" checked>
                                 <span><strong>📌 Tap Q / D-Pad Left to Toggle Open</strong> (<code>spawnmenu_toggle 1</code>) — Tap once to keep the Q-Menu open while browsing instead of holding the button down.</span>
@@ -1041,20 +1027,6 @@
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- Giant 40"+ Couch TV Hover Magnifier Preview Card -->
-    <div id="appCouchMagnifierCard" style="display: none; position: fixed; right: 24px; bottom: 24px; width: 350px; background: rgba(11, 17, 30, 0.97); border: 3px solid #38bdf8; border-radius: 14px; padding: 14px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 25px rgba(56, 189, 248, 0.28); z-index: 9998; pointer-events: none; transition: opacity 0.12s ease;">
-        <div id="appCouchMagThumbWrap" style="width: 100%; height: 195px; background: rgba(24, 34, 54, 0.95); border-radius: 10px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; border: 1px solid rgba(148, 163, 184, 0.2);">
-            <img id="appCouchMagImg" src="" alt="" style="width: 100%; height: 100%; object-fit: cover; display: none;">
-            <div id="appCouchMagFallback" style="font-size: 52px; font-weight: 800; color: #38bdf8; text-align: center; padding: 12px;">λ</div>
-        </div>
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
-            <span id="appCouchMagBadge" style="background: rgba(16, 185, 129, 0.22); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.45); border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;">MAP</span>
-            <span id="appCouchMagMeta" style="font-size: 13px; font-weight: 700; color: #94a3b8;"></span>
-        </div>
-        <div id="appCouchMagTitle" style="font-size: 22px; font-weight: 900; color: #f8fafc; line-height: 1.22; word-break: break-word; margin-bottom: 5px;"></div>
-        <div id="appCouchMagSub" style="font-size: 13.5px; font-weight: 600; color: #38bdf8; line-height: 1.35;"></div>
     </div>
 
     <!-- Notification Toast Container -->

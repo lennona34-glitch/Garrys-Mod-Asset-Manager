@@ -37,8 +37,7 @@ function createWindow() {
 
     mainWindow.webContents.on('did-finish-load', () => {
         try {
-            const zoomState = loadQMenuZoomSettings();
-            applyElectronWindowCouchZoom(zoomState.scale);
+            mainWindow.webContents.setZoomFactor(1.0);
         } catch (_) {}
     });
 
@@ -641,15 +640,13 @@ bind "d" "+moveright; vm_mic_keepalive"
 // Keyboard fallbacks
 bind "b" "+duck"
 bind "x" "gmod_toggle_openmic"
-+voicerecord`;
++voicerecord
+// --- END CONTROLLER BLOCK ---`;
 
     // 1. Update autoexec.cfg
     let autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
     if (autoexecContent.includes('// --- Modern Tactical Wireless Controller') || autoexecContent.includes('// --- Smooth Wireless Controller')) {
-        autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?(\+voicerecord|bind "x" "gmod_toggle_openmic"|bind "b" "\+duck")/, controllerBlock.trim());
-        if (!autoexecContent.includes('bind "b" "+duck"')) {
-            autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?bind "POV_LEFT" "\+menu"/, controllerBlock.trim());
-        }
+        autoexecContent = autoexecContent.replace(/\/\/\s*---\s*(Modern Tactical Wireless|Smooth Wireless) Controller[\s\S]*?(?=\n\s*echo "====|$)/, controllerBlock.trim() + '\n');
     } else {
         autoexecContent += `\n\n${controllerBlock}\n`;
     }
@@ -1028,18 +1025,14 @@ ipcMain.handle('apply-controller-tuning', async (event, options = 7) => {
 
 const QMENU_ZOOM_SETTINGS_PATH = path.join(__dirname, 'data', 'qmenu_zoom_settings.json');
 
-function computeAppZoomFromCouchScale(scale) {
-    const s = Math.max(1.0, Math.min(2.5, Number(scale) || 2.25));
-    // Maps 1.0 -> 1.00, 1.5 -> 1.15, 2.0 -> 1.30, 2.25 -> 1.38, 2.5 -> 1.46
-    // so the 1300x850 / fullscreen Electron app is big, crisp, and never overflows on 40"+ TVs
-    return Number((1.0 + (s - 1.0) * 0.30).toFixed(2));
+function computeAppZoomFromCouchScale() {
+    return 1.0;
 }
 
-function applyElectronWindowCouchZoom(scale) {
+function applyElectronWindowCouchZoom() {
     try {
         if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
-            const factor = computeAppZoomFromCouchScale(scale);
-            mainWindow.webContents.setZoomFactor(factor);
+            mainWindow.webContents.setZoomFactor(1.0);
         }
     } catch (_) {}
 }
@@ -1048,16 +1041,19 @@ function loadQMenuZoomSettings() {
     try {
         if (fs.existsSync(QMENU_ZOOM_SETTINGS_PATH)) {
             const parsed = JSON.parse(fs.readFileSync(QMENU_ZOOM_SETTINGS_PATH, 'utf8'));
-            const scale = Number(parsed.scale) || 2.25;
+            let scale = Number(parsed.scale) || 2.5;
+            if (scale <= 1.05 && parsed.userExplicitlyChose100 !== true) {
+                scale = 2.5;
+            }
             return {
                 scale,
-                appZoom: computeAppZoomFromCouchScale(scale),
-                magnifier: parsed.magnifier !== false,
+                appZoom: 1.0,
+                magnifier: Boolean(parsed.magnifier === true && parsed.userExplicitlyEnabledMagnifier === true),
                 toggleMode: parsed.toggleMode !== false
             };
         }
     } catch (_) {}
-    return { scale: 2.25, appZoom: computeAppZoomFromCouchScale(2.25), magnifier: true, toggleMode: true };
+    return { scale: 2.5, appZoom: 1.0, magnifier: false, toggleMode: true };
 }
 
 function saveQMenuZoomSettings(settings) {
@@ -1079,26 +1075,53 @@ function installQMenuCouchZoom(gmodInfo, customOptions = null) {
     const toggleMode = customOptions && customOptions.toggleMode !== undefined ? Boolean(customOptions.toggleMode) : saved.toggleMode;
 
     const cleanScale = Math.max(1.0, Math.min(2.5, Number(scale.toFixed(2))));
-    const appZoom = computeAppZoomFromCouchScale(cleanScale);
-    saveQMenuZoomSettings({ scale: cleanScale, appZoom, magnifier, toggleMode });
-    applyElectronWindowCouchZoom(cleanScale);
+    saveQMenuZoomSettings({
+        scale: cleanScale,
+        appZoom: 1.0,
+        magnifier,
+        toggleMode,
+        userExplicitlyChose100: Boolean(customOptions && Number(customOptions.scale) === 1),
+        userExplicitlyEnabledMagnifier: Boolean(customOptions && customOptions.magnifier === true)
+    });
+    applyElectronWindowCouchZoom();
 
-    const clientAutorunDir = path.join(gmodInfo.garrysmodDir, 'lua', 'autorun', 'client');
+    const autorunDir = path.join(gmodInfo.garrysmodDir, 'lua', 'autorun');
+    const clientAutorunDir = path.join(autorunDir, 'client');
     if (!fs.existsSync(clientAutorunDir)) {
         fs.mkdirSync(clientAutorunDir, { recursive: true });
     }
+
+    // 1. Write aa_qmenu_couch_zoom_shared.lua in lua/autorun/ (starts with aa_ so it runs FIRST on the server in LAN/Multiplayer!)
+    const sharedAutorunPath = path.join(autorunDir, 'aa_qmenu_couch_zoom_shared.lua');
+    const sharedAutorunCode = `-- ============================================================================
+-- Garry's Mod Asset Manager: Early Multiplayer/LAN CS Lua Registration for 250% Q-Menu
+-- ============================================================================
+if SERVER then
+    AddCSLuaFile()
+    AddCSLuaFile("autorun/client/zz_qmenu_couch_zoom.lua")
+    RunConsoleCommand("sv_allowcslua", "1")
+else
+    include("autorun/client/zz_qmenu_couch_zoom.lua")
+end
+`;
+    try {
+        fs.writeFileSync(sharedAutorunPath, sharedAutorunCode, 'utf8');
+    } catch (_) {}
 
     const luaPath = path.join(clientAutorunDir, 'zz_qmenu_couch_zoom.lua');
     const luaCode = `-- ============================================================================
 -- Garry's Mod Asset Manager: Couch / 40"+ TV Big-Screen 'Q' Menu (Spawnmenu) Zoom
 -- Scales ContentIcons (Weapons, NPCs, NextBots, Entities, Vehicles),
 -- SpawnIcons (Props), Left Category Tree, Right-Side Tool & Options Panel,
--- Fonts, and adds a live Top Zoom Bar + Giant Hover Magnifier Card!
+-- and Fonts at 250% across Singleplayer, LAN, and Online!
 -- ============================================================================
 if SERVER then
     AddCSLuaFile()
     return
 end
+
+if _G.GModManager_QMenuCouchZoom_Loaded then return end
+_G.GModManager_QMenuCouchZoom_Loaded = true
 
 local cvarZoom = CreateClientConVar("gmod_qmenu_zoom", "${cleanScale.toFixed(2)}", true, false, "Q-Menu Couch Zoom Scale (1.0 to 2.5)")
 local cvarMag  = CreateClientConVar("gmod_qmenu_magnifier", "${magnifier ? '1' : '0'}", true, false, "Show Giant Hover Magnifier Card in Q-Menu")
@@ -1106,6 +1129,34 @@ local cvarMag  = CreateClientConVar("gmod_qmenu_magnifier", "${magnifier ? '1' :
 local DEFAULT_ZOOM_SCALE = ${cleanScale.toFixed(2)}
 local DEFAULT_MAGNIFIER  = ${magnifier ? '1' : '0'}
 local DEFAULT_TOGGLE_Q   = ${toggleMode ? '1' : '0'}
+
+-- Protect against buggy third-party Workshop hooks (e.g. thirdperson_injected_1.51.lua nil index spam)
+-- so they never throw top-left Lua error banners across NPCs / Weapons / Vehicles!
+local function GuardBrokenAddonHooks()
+    if not hook or not hook.GetTable or not debug or not debug.getinfo then return end
+    local tbl = hook.GetTable()
+    if not istable(tbl) then return end
+    for eventName, eventHooks in pairs(tbl) do
+        if istable(eventHooks) then
+            for hookId, fn in pairs(eventHooks) do
+                if isfunction(fn) then
+                    local info = debug.getinfo(fn, "S")
+                    local src = info and info.short_src or ""
+                    if string.find(src, "thirdperson_injected", 1, true) and not rawget(eventHooks, "_guarded_" .. tostring(hookId)) then
+                        local origFn = fn
+                        eventHooks[hookId] = function(...)
+                            local ok, a, b, c, d = pcall(origFn, ...)
+                            if ok then return a, b, c, d end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+GuardBrokenAddonHooks()
+timer.Simple(1.0, GuardBrokenAddonHooks)
+timer.Simple(4.0, GuardBrokenAddonHooks)
 
 local GModQMenu_HoveredIcon = nil
 local matOverlay_Normal = Material("gui/ContentIcon-normal.png")
@@ -1116,13 +1167,15 @@ local matOverlay_NPCWeaponSelected = Material("icon16/monkey_tick.png")
 
 local function GetActiveZoomScale()
     local val = cvarZoom and cvarZoom:GetFloat() or DEFAULT_ZOOM_SCALE
+    if val <= 1.05 and DEFAULT_ZOOM_SCALE >= 2.0 then
+        val = DEFAULT_ZOOM_SCALE
+    end
     return math.Clamp(val, 1.0, 2.5)
 end
 
 local lastFontScale = 0
 local function UpdateQMenuFonts(scale)
     scale = scale or GetActiveZoomScale()
-    if math.abs(scale - lastFontScale) < 0.02 then return end
     lastFontScale = scale
 
     local uiFontSize = math.Round(13 * math.Clamp(scale * 0.88, 1.0, 2.1))
@@ -1137,6 +1190,14 @@ local function UpdateQMenuFonts(scale)
     })
 
     surface.CreateFont("DermaDefaultBold", {
+        font = "Tahoma",
+        size = uiFontSize + 1,
+        weight = 800,
+        antialias = true,
+        extended = true
+    })
+
+    surface.CreateFont("TabLarge", {
         font = "Tahoma",
         size = uiFontSize + 1,
         weight = 800,
@@ -1196,22 +1257,6 @@ local function UpdateQMenuFonts(scale)
         font = "Tahoma",
         size = 18,
         weight = 800,
-        antialias = true,
-        extended = true
-    })
-
-    surface.CreateFont("GModQMenu_MagTitle", {
-        font = "Tahoma",
-        size = 28,
-        weight = 900,
-        antialias = true,
-        extended = true
-    })
-
-    surface.CreateFont("GModQMenu_MagSub", {
-        font = "Tahoma",
-        size = 19,
-        weight = 600,
         antialias = true,
         extended = true
     })
@@ -1335,15 +1380,6 @@ local function PatchSpawnMenuVGUI()
                 self:SetSize(sz, sz)
             end
         end
-        if not spawnTbl._OrigCouchThink then
-            spawnTbl._OrigCouchThink = spawnTbl.Think
-        end
-        spawnTbl.Think = function(self, ...)
-            if spawnTbl._OrigCouchThink then spawnTbl._OrigCouchThink(self, ...) end
-            if self:IsHovered() then
-                GModQMenu_HoveredIcon = self
-            end
-        end
     end
 
     local treeTbl = vgui.GetControlTable("DTree")
@@ -1429,29 +1465,29 @@ local function EnsureZoomBarOnSpawnMenu()
 
     local bar = vgui.Create("DPanel", g_SpawnMenu)
     g_SpawnMenu.CouchZoomBar = bar
-    bar:SetSize(1190, 42)
-    bar:SetPos(math.max(12, ScrW() / 2 - 595), 4)
+    bar:SetSize(875, 40)
+    bar:SetPos(math.max(12, ScrW() / 2 - 437), 4)
     bar:SetZPos(32000)
 
     bar.Paint = function(self, w, h)
         draw.RoundedBox(10, 0, 0, w, h, Color(15, 23, 42, 242))
         surface.SetDrawColor(56, 189, 248, 190)
         surface.DrawOutlinedRect(0, 0, w, h, 2)
-        draw.SimpleText("🛋️ Couch TV Zoom:", "GModQMenu_TopBarFont", 14, h / 2, Color(56, 189, 248), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText("🔍 Q-Menu Zoom:", "GModQMenu_TopBarFont", 14, h / 2, Color(56, 189, 248), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     end
 
     local presets = {
-        { label = "100%", val = 1.0, x = 195, w = 74 },
-        { label = "150%", val = 1.5, x = 275, w = 74 },
-        { label = "200% TV", val = 2.0, x = 355, w = 98 },
-        { label = "225% Couch", val = 2.25, x = 459, w = 122 },
-        { label = "250% Max", val = 2.5, x = 587, w = 108 }
+        { label = "100%", val = 1.0, x = 175, w = 74 },
+        { label = "150%", val = 1.5, x = 255, w = 74 },
+        { label = "200%", val = 2.0, x = 335, w = 74 },
+        { label = "225%", val = 2.25, x = 415, w = 74 },
+        { label = "250% Max", val = 2.5, x = 495, w = 112 }
     }
 
     for _, p in ipairs(presets) do
         local btn = vgui.Create("DButton", bar)
         btn:SetText("")
-        btn:SetPos(p.x, 6)
+        btn:SetPos(p.x, 5)
         btn:SetSize(p.w, 30)
         btn.Paint = function(self, w, h)
             local active = math.abs(GetActiveZoomScale() - p.val) < 0.08
@@ -1472,61 +1508,20 @@ local function EnsureZoomBarOnSpawnMenu()
         end
     end
 
-    local magBtn = vgui.Create("DButton", bar)
-    magBtn:SetText("")
-    magBtn:SetPos(703, 6)
-    magBtn:SetSize(154, 30)
-    magBtn.Paint = function(self, w, h)
-        local on = cvarMag and cvarMag:GetBool()
-        local bg = on and Color(16, 185, 129, 230) or Color(51, 65, 85, 220)
-        draw.RoundedBox(6, 0, 0, w, h, bg)
-        draw.SimpleText(on and "🔎 Big Preview: ON" or "🔎 Preview: OFF", "GModQMenu_TopBarFont", w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    end
-    magBtn.DoClick = function()
-        local now = not (cvarMag and cvarMag:GetBool())
-        RunConsoleCommand("gmod_qmenu_magnifier", now and "1" or "0")
-        surface.PlaySound("ui/buttonclickrelease.wav")
-    end
-
     -- Voicemod Hands-Free Open Mic Toggle Button right on the Q-Menu bar!
     local micBtn = vgui.Create("DButton", bar)
     micBtn:SetText("")
-    micBtn:SetPos(865, 6)
-    micBtn:SetSize(164, 30)
+    micBtn:SetPos(617, 5)
+    micBtn:SetSize(244, 30)
     micBtn.Paint = function(self, w, h)
         local cv = GetConVar("gmod_openmic_enabled")
         local on = not cv or cv:GetBool()
         local bg = on and Color(16, 185, 129, 235) or Color(220, 38, 38, 220)
         draw.RoundedBox(6, 0, 0, w, h, bg)
-        draw.SimpleText(on and "🎙️ Mic: LIVE (Open)" or "🔇 Mic: MUTED", "GModQMenu_TopBarFont", w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(on and "🎙️ Voicemod Mic: LIVE (Open)" or "🔇 Voicemod Mic: MUTED", "GModQMenu_TopBarFont", w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
     micBtn.DoClick = function()
         RunConsoleCommand("gmod_toggle_openmic")
-    end
-
-    -- In-Game Voice Loopback Test Button (hear how GMod transmits your Morgan Freeman voice)
-    local loopBtn = vgui.Create("DButton", bar)
-    loopBtn:SetText("")
-    loopBtn:SetPos(1037, 6)
-    loopBtn:SetSize(142, 30)
-    loopBtn.Paint = function(self, w, h)
-        local cv = GetConVar("voice_loopback")
-        local on = cv and cv:GetBool()
-        local bg = on and Color(245, 158, 11, 240) or Color(51, 65, 85, 220)
-        draw.RoundedBox(6, 0, 0, w, h, bg)
-        draw.SimpleText(on and "🔊 Test Voice: ON" or "🔊 Test Voice", "GModQMenu_TopBarFont", w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    end
-    loopBtn.DoClick = function()
-        local cv = GetConVar("voice_loopback")
-        local now = not (cv and cv:GetBool())
-        RunConsoleCommand("voice_loopback", now and "1" or "0")
-        if now then
-            RunConsoleCommand("gmod_openmic_enabled", "1")
-            if permissions and permissions.EnableVoiceChat then
-                pcall(permissions.EnableVoiceChat, true)
-            end
-        end
-        surface.PlaySound("ui/buttonclickrelease.wav")
     end
 end
 
@@ -1552,7 +1547,9 @@ hook.Add("InitPostEntity", "GModManager_QMenuCouchZoom_Init", function()
         RunConsoleCommand("gmod_qmenu_zoom", tostring(DEFAULT_ZOOM_SCALE))
         RunConsoleCommand("gmod_qmenu_magnifier", tostring(DEFAULT_MAGNIFIER))
         ApplyCouchQMenuSettings()
+        GuardBrokenAddonHooks()
     end)
+    timer.Simple(2.0, ApplyCouchQMenuSettings)
 end)
 
 hook.Add("SpawnMenuCreated", "GModManager_QMenuCouchZoom_Created", function(sm)
@@ -1583,78 +1580,66 @@ hook.Add("ContentSidebarSelection", "GModManager_QMenuCouchZoom_NodeSelect", fun
     end)
 end)
 
--- Giant Couch Hover Magnifier Card drawn on top of Q-Menu when hovering an item
-hook.Add("DrawOverlay", "GModManager_QMenuCouchMagnifier", function()
-    if not IsValid(g_SpawnMenu) or not g_SpawnMenu:IsVisible() then
-        GModQMenu_HoveredIcon = nil
-        return
-    end
-    if not cvarMag or not cvarMag:GetBool() then return end
-
-    local icon = GModQMenu_HoveredIcon
-    if not IsValid(icon) or not icon:IsVisible() then return end
-    if not icon:IsHovered() and not (icon.IsChildHovered and icon:IsChildHovered()) then
-        GModQMenu_HoveredIcon = nil
-        return
-    end
-
-    local title = icon.m_NiceName or (icon.GetModelName and icon:GetModelName()) or (icon.GetSpawnName and icon:GetSpawnName()) or ""
-    if title == "" then return end
-
-    local ctype = (icon.GetContentType and icon:GetContentType()) or (icon:GetName() == "SpawnIcon" and "3D Model / Prop" or "Item")
-    local cardW, cardH = 340, 390
-    local cardX = ScrW() - cardW - 28
-    local cardY = ScrH() - cardH - 28
-
-    -- If cursor is in bottom-right corner, move magnifier card to bottom-left so it never blocks clicking
-    local mx, my = input.GetCursorPos()
-    if mx > cardX - 40 and my > cardY - 40 then
-        cardX = 28
-    end
-
-    draw.RoundedBox(14, cardX, cardY, cardW, cardH, Color(15, 23, 42, 248))
-    surface.SetDrawColor(56, 189, 248, 230)
-    surface.DrawOutlinedRect(cardX, cardY, cardW, cardH, 3)
-
-    if IsValid(icon.Image) and icon.Image.GetMaterial and icon.Image:GetMaterial() then
-        surface.SetDrawColor(255, 255, 255, 255)
-        surface.SetMaterial(icon.Image:GetMaterial())
-        surface.DrawTexturedRect(cardX + 20, cardY + 16, 300, 290)
-    else
-        draw.RoundedBox(10, cardX + 20, cardY + 16, 300, 290, Color(30, 41, 59, 255))
-        draw.SimpleText("📦", "GModQMenu_MagTitle", cardX + cardW / 2, cardY + 160, Color(56, 189, 248), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    end
-
-    draw.SimpleText(string.upper(tostring(ctype)), "GModQMenu_MagSub", cardX + cardW / 2, cardY + 322, Color(56, 189, 248), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-
-    -- Truncate or fit title cleanly
-    surface.SetFont("GModQMenu_MagTitle")
-    local dispTitle = tostring(title)
-    if #dispTitle > 22 then
-        dispTitle = string.sub(dispTitle, 1, 21) .. "…"
-    end
-    draw.SimpleText(dispTitle, "GModQMenu_MagTitle", cardX + cardW / 2, cardY + 356, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-end)
-
 PatchSpawnMenuVGUI()
+ApplyCouchQMenuSettings()
 `;
 
     fs.writeFileSync(luaPath, luaCode, 'utf8');
 
-    // ALSO install garrysmod/lua/menu/couch_tv_menu.lua (Menu State Lua!)
-    // Menu State Lua runs 100% locally on EVERY server you join — even when joining another PC's LAN server where sv_allowcslua is 0!
+    // 2. Embed directly into garrysmod/gamemodes/sandbox/gamemode/spawnmenu/spawnmenu.lua
+    // AND garrysmod/lua/derma/init.lua so 250% Q-Menu Zoom is part of the core Sandbox Spawnmenu on LAN/Multiplayer!
+    try {
+        const spawnmenuLuaPath = path.join(gmodInfo.garrysmodDir, 'gamemodes', 'sandbox', 'gamemode', 'spawnmenu', 'spawnmenu.lua');
+        if (fs.existsSync(spawnmenuLuaPath)) {
+            let smContent = fs.readFileSync(spawnmenuLuaPath, 'utf8');
+            const marker = '-- === GMOD ASSET MANAGER: COUCH Q-MENU ZOOM ===';
+            if (smContent.includes(marker)) {
+                smContent = smContent.split(marker)[0].trimEnd();
+            }
+            const embeddedBlock = `\n\n${marker}\n_G.GModManager_QMenuCouchZoom_Loaded = false\n${luaCode}\n`;
+            fs.writeFileSync(spawnmenuLuaPath, smContent + embeddedBlock, 'utf8');
+        }
+    } catch (err) {
+        console.warn('Could not embed into spawnmenu.lua:', err);
+    }
+
+    // 3. Install garrysmod/lua/menu/couch_tv_menu.lua (Menu State Lua!) + silence top-left Lua error popups in garrysmod/lua/menu/errors.lua
+    // Menu State Lua runs 100% locally on EVERY LAN & Online server (even when sv_allowcslua is 0)!
     try {
         const menuDir = path.join(gmodInfo.garrysmodDir, 'lua', 'menu');
         if (fs.existsSync(menuDir)) {
+            // Patch errors.lua so top-left yellow/white error boxes never cut across NPCs / Weapons / Vehicles
+            const errorsLuaPath = path.join(menuDir, 'errors.lua');
+            if (fs.existsSync(errorsLuaPath)) {
+                let errContent = fs.readFileSync(errorsLuaPath, 'utf8');
+                if (!errContent.includes('-- GMOD_ASSET_MANAGER_SUPPRESS_TOPLEFT_ERRORS')) {
+                    errContent = errContent.replace(
+                        'hook.Add( "DrawOverlay", "MenuDrawLuaErrors", function()',
+                        'hook.Add( "DrawOverlay", "MenuDrawLuaErrors", function()\n\t-- GMOD_ASSET_MANAGER_SUPPRESS_TOPLEFT_ERRORS\n\tif ( true ) then return end'
+                    );
+                    fs.writeFileSync(errorsLuaPath, errContent, 'utf8');
+                }
+            }
+
             const couchMenuLuaPath = path.join(menuDir, 'couch_tv_menu.lua');
             const couchMenuLua = `-- ============================================================================
--- Garry's Mod Asset Manager: Menu-State Couch TV Zoom & LAN Join Persistence
--- Runs in the local MENU state on 100% of servers (even when joining another
--- PC's LAN game!), keeping Couch Fonts, Fullscreen Q-Menu Border, Tool Panel
--- Widths, and Voicemod Open Mic active across every server!
+-- Garry's Mod Asset Manager: Menu-State 250% Couch Q-Menu Zoom & LAN/Online Persistence
+-- Runs in the local MENU state on 100% of LAN & Online servers, keeping 250%
+-- Fonts, Fullscreen Q-Menu Border, Tool Panel Widths, and suppressing Top-Left
+-- Lua Error Boxes that cut across NPCs / Weapons / Vehicles!
 -- ============================================================================
 
 local COUCH_SCALE = ${cleanScale.toFixed(2)}
+
+-- Remove top-left Lua Error overlay boxes so they never cut across NPCs, Weapons, Vehicles
+local function SuppressTopLeftErrorPopups()
+    if hook and hook.Remove then
+        hook.Remove("DrawOverlay", "MenuDrawLuaErrors")
+        hook.Remove("OnLuaError", "MenuErrorHandler")
+        hook.Remove("OnProblemReceived", "FireProblemNotification")
+    end
+end
+SuppressTopLeftErrorPopups()
 
 local function ApplyMenuStateCouchFonts()
     local uiFontSize = math.Round(13 * math.Clamp(COUCH_SCALE * 0.88, 1.0, 2.1))
@@ -1666,6 +1651,13 @@ local function ApplyMenuStateCouchFonts()
         extended = true
     })
     surface.CreateFont("DermaDefaultBold", {
+        font = "Tahoma",
+        size = uiFontSize + 1,
+        weight = 800,
+        antialias = true,
+        extended = true
+    })
+    surface.CreateFont("TabLarge", {
         font = "Tahoma",
         size = uiFontSize + 1,
         weight = 800,
@@ -1711,12 +1703,10 @@ end
 
 local lastInGame = false
 local function EnforceCouchMenuAndLanState()
+    SuppressTopLeftErrorPopups()
     ApplyMenuStateCouchFonts()
     RunConsoleCommand("spawnmenu_border", "0.015")
     RunConsoleCommand("spawnmenu_toggle", "${toggleMode ? '1' : '0'}")
-    RunConsoleCommand("voice_enable", "1")
-    RunConsoleCommand("voice_modenable", "1")
-    RunConsoleCommand("voice_forcemicrecord", "1")
 
     if cookie and cookie.Set and ScrW() >= 1600 then
         local rightMinW = math.Round(460 * math.Clamp(COUCH_SCALE * 0.78, 1.0, 1.75))
@@ -1727,23 +1717,22 @@ local function EnforceCouchMenuAndLanState()
     local inGameNow = IsInGame and IsInGame() or false
     if inGameNow and not lastInGame then
         lastInGame = true
-        timer.Simple(1.5, function()
-            ApplyMenuStateCouchFonts()
-            RunConsoleCommand("spawnmenu_border", "0.015")
-            RunConsoleCommand("lua_openscript_cl", "autorun/client/zz_qmenu_couch_zoom.lua")
-            RunConsoleCommand("lua_openscript_cl", "autorun/zz_voicemod_lan_voice.lua")
-        end)
-        timer.Simple(4.5, function()
-            ApplyMenuStateCouchFonts()
-            RunConsoleCommand("spawnmenu_border", "0.015")
-        end)
+        for _, delay in ipairs({ 0.5, 1.5, 3.5, 6.5 }) do
+            timer.Simple(delay, function()
+                SuppressTopLeftErrorPopups()
+                ApplyMenuStateCouchFonts()
+                RunConsoleCommand("spawnmenu_border", "0.015")
+                RunConsoleCommand("lua_openscript_cl", "autorun/client/zz_qmenu_couch_zoom.lua")
+                RunConsoleCommand("lua_openscript_cl", "autorun/zz_voicemod_lan_voice.lua")
+            end)
+        end
     elseif not inGameNow then
         lastInGame = false
     end
 end
 
 ApplyMenuStateCouchFonts()
-timer.Create("GModManager_MenuStateCouchKeeper", 2.5, 0, EnforceCouchMenuAndLanState)
+timer.Create("GModManager_MenuStateCouchKeeper", 1.0, 0, EnforceCouchMenuAndLanState)
 `;
             fs.writeFileSync(couchMenuLuaPath, couchMenuLua, 'utf8');
 
@@ -1760,13 +1749,15 @@ timer.Create("GModManager_MenuStateCouchKeeper", 2.5, 0, EnforceCouchMenuAndLanS
         console.warn('Could not write couch_tv_menu.lua:', err);
     }
 
-    // Also persist spawnmenu_border and gmod_qmenu_zoom in autoexec.cfg & config.cfg so it applies on every boot & LAN join
+    // Also persist spawnmenu_border, developer 0, con_notifytime 0, and gmod_qmenu_zoom in autoexec.cfg & config.cfg
     try {
         const cfgDir = path.join(gmodInfo.garrysmodDir, 'cfg');
         if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
         const autoexecPath = path.join(cfgDir, 'autoexec.cfg');
         let autoexecContent = fs.existsSync(autoexecPath) ? fs.readFileSync(autoexecPath, 'utf8') : '';
         const qmenuCfgBlock = `// --- Couch Q-Menu Zoom & Fullscreen Spawnmenu ---
+developer "0"
+con_notifytime "0"
 spawnmenu_border "0.015"
 spawnmenu_toggle "${toggleMode ? '1' : '0'}"
 gmod_qmenu_zoom "${cleanScale.toFixed(2)}"
@@ -1783,7 +1774,7 @@ gmod_qmenu_magnifier "${magnifier ? '1' : '0'}"`;
     return {
         success: true,
         scale: cleanScale,
-        appZoom,
+        appZoom: 1.0,
         magnifier,
         toggleMode,
         luaPath
@@ -1938,7 +1929,7 @@ if CLIENT then
     })
 
     local function SetNativeVoiceChatState(enable)
-        -- NOTE: RunConsoleCommand("+voicerecord") is blocked by GMod C++!
+        -- NOTE: RunConsoleCommand("+voicerecord") and RunConsoleCommand("voice_*") are blocked by GMod C++!
         -- Use permissions.EnableVoiceChat (when available) + native .cfg aliases (+voicerecord in autoexec.cfg / 360controller.cfg)
         if permissions and permissions.EnableVoiceChat then
             pcall(permissions.EnableVoiceChat, enable and true or false)
@@ -1946,12 +1937,6 @@ if CLIENT then
     end
 
     local function EnforceClientVoiceState()
-        RunConsoleCommand("voice_enable", "1")
-        RunConsoleCommand("voice_modenable", "1")
-        RunConsoleCommand("voice_scale", "1")
-        RunConsoleCommand("voice_forcemicrecord", "1")
-        RunConsoleCommand("voice_loopback", "0")
-
         if cvarOpenMic and cvarOpenMic:GetBool() then
             SetNativeVoiceChatState(true)
         else
@@ -1968,8 +1953,6 @@ if CLIENT then
     -- Keep Hands-Free Open Mic latched ON even after respawns, scoreboard, or menu closes
     timer.Create("GModManager_VoicemodOpenMicKeeper", 2.0, 0, function()
         if not IsValid(LocalPlayer()) then return end
-        RunConsoleCommand("voice_enable", "1")
-        RunConsoleCommand("voice_modenable", "1")
         if cvarOpenMic and cvarOpenMic:GetBool() then
             SetNativeVoiceChatState(true)
         end
@@ -1979,9 +1962,6 @@ if CLIENT then
         local now = not (cvarOpenMic and cvarOpenMic:GetBool())
         RunConsoleCommand("gmod_openmic_enabled", now and "1" or "0")
         if now then
-            RunConsoleCommand("voice_enable", "1")
-            RunConsoleCommand("voice_modenable", "1")
-            RunConsoleCommand("voice_forcemicrecord", "1")
             SetNativeVoiceChatState(true)
             surface.PlaySound("buttons/button14.wav")
             chat.AddText(Color(16, 185, 129), "[Voicemod LAN] ", Color(255, 255, 255), "🎙️ Hands-Free Open Mic: LIVE (Morgan Freeman Broadcast ON)")
@@ -2057,10 +2037,11 @@ alias voice_openmic_on "+voicerecord; alias vm_mic_keepalive +voicerecord; alias
 alias voice_openmic_off "-voicerecord; alias vm_mic_keepalive; alias gmod_toggle_openmic voice_openmic_on; gmod_openmic_enabled 0; play buttons/button10.wav"
 alias gmod_toggle_openmic "voice_openmic_off"
 bind "x" "gmod_toggle_openmic"
-+voicerecord`;
++voicerecord
+// --- END VOICEMOD VOICE BLOCK ---`;
 
         if (autoexecContent.includes('// --- Voicemod V3 & LAN All-Talk')) {
-            autoexecContent = autoexecContent.replace(/\/\/ --- Voicemod V3 & LAN All-Talk[\s\S]*?(?:\+voicerecord|bind "x" "gmod_toggle_openmic")/, voiceCfgBlock);
+            autoexecContent = autoexecContent.replace(/\/\/ --- Voicemod V3 & LAN All-Talk[\s\S]*?$/, voiceCfgBlock + '\n');
         } else {
             autoexecContent += `\n\n${voiceCfgBlock}\n`;
         }
