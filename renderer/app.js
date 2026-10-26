@@ -163,7 +163,7 @@ async function loadInitialData() {
             }
             if (pubNavs && typeof pubNavs === 'object') {
                 state.publishedNavmeshes = pubNavs;
-                renderMapsGrid(state.maps);
+                renderMaps();
             }
 
             // Background pre-fetch of workshop (non-blocking)
@@ -291,7 +291,7 @@ function setupEventHandlers() {
             refreshAddons(), 
             refreshStorage(), 
             refreshDiagnostics(),
-            window.api.getPublishedNavmeshes ? window.api.getPublishedNavmeshes().then(p => { if (p) { state.publishedNavmeshes = p; renderMapsGrid(state.maps); } }).catch(() => {}) : Promise.resolve()
+            window.api.getPublishedNavmeshes ? window.api.getPublishedNavmeshes().then(p => { if (p) { state.publishedNavmeshes = p; renderMaps(); } }).catch(() => {}) : Promise.resolve()
         ]);
         if (state.currentTab === 'workshop' && state.wsItems && state.wsItems.length > 0) {
             renderWorkshopGrid(state.wsItems);
@@ -802,6 +802,10 @@ async function refreshMaps() {
     } catch (err) {
         console.error('Failed to scan maps:', err);
     }
+}
+
+function renderMapsGrid() {
+    return renderMaps();
 }
 
 function renderMaps() {
@@ -1659,7 +1663,7 @@ async function executePublishNavmesh() {
             };
 
             // Re-render the map grid right away so the cloud icon turns green with checkmark!
-            renderMapsGrid(state.maps);
+            renderMaps();
 
             statusAlert.style.background = 'rgba(34, 197, 94, 0.15)';
             statusAlert.style.color = '#4ade80';

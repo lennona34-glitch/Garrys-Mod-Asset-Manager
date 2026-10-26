@@ -88,6 +88,7 @@ async function scanEditableCharacters(gmodInfo) {
             const folders = fs.readdirSync(gmodInfo.workshopDir, { withFileTypes: true });
             for (const folder of folders) {
                 if (!folder.isDirectory()) continue;
+                if (folder.name === '3819314523' || folder.name === '3732561347') continue;
                 const folderPath = path.join(gmodInfo.workshopDir, folder.name);
                 const files = fs.readdirSync(folderPath);
                 for (const file of files) {

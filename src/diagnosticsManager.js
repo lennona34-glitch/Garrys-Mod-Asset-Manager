@@ -183,30 +183,62 @@ async function runDiagnostics(gmodInfo) {
         return { issues: [], resolved: [], recommendations: [], summary: 'GMod not found', counts: { missingContent: 0, missingBases: 0, conflicts: 0, noNav: 0, resolvedCount: 0 } };
     }
 
-    // 1. Scan installed addons to identify active workshop items and headers
+    // 1. Scan installed addons to identify both ALL subscribed workshop items on disk AND active mounted items
+    const bannedIds = new Set(['3819314523', '3732561347']); // The Broken End & TBS Entity Base
     const noMountIds = readAddonNoMount(gmodInfo);
     const noMountSet = new Set(noMountIds);
+    let noMountDirty = false;
+
+    for (const bId of bannedIds) {
+        if (!noMountSet.has(bId)) {
+            noMountSet.add(bId);
+            noMountDirty = true;
+        }
+    }
+
+    // Auto-keep subscribed CS:S Content Fix (3540392343) mounted if downloaded on disk
+    for (const cssId of ['3540392343', '3414484452', '3066445274']) {
+        if (noMountSet.has(cssId) && fs.existsSync(path.join(gmodInfo.workshopDir, cssId))) {
+            noMountSet.delete(cssId);
+            noMountDirty = true;
+        }
+    }
+
     const installedWorkshopIds = new Set();
+    const subscribedWorkshopIds = new Set();
     const installedGmaHeaders = [];
+    const allSubscribedHeaders = [];
 
     try {
         const items = fs.readdirSync(gmodInfo.workshopDir, { withFileTypes: true });
         for (const item of items) {
             if (!item.isDirectory()) continue;
             const folder = path.join(gmodInfo.workshopDir, item.name);
+
+            if (bannedIds.has(item.name)) {
+                try { fs.rmSync(folder, { recursive: true, force: true }); } catch (_) {}
+                continue;
+            }
+
             const files = fs.readdirSync(folder);
             for (const f of files) {
                 const lower = f.toLowerCase();
-                // Only consider active, non-disabled, and non-unmounted GMAs
-                if (lower.endsWith('.gma') && !lower.endsWith('.disabled') && !noMountSet.has(item.name)) {
-                    installedWorkshopIds.add(item.name);
+                if (lower.endsWith('.gma') || lower.endsWith('.gma.disabled')) {
+                    subscribedWorkshopIds.add(item.name);
+                    let h = null;
                     try {
-                        const h = parseGmaHeader(path.join(folder, f));
+                        h = parseGmaHeader(path.join(folder, f));
                         if (h) {
                             h.workshopId = item.name;
-                            installedGmaHeaders.push(h);
+                            allSubscribedHeaders.push(h);
                         }
                     } catch (_) {}
+
+                    // Active, non-disabled, and non-unmounted GMAs
+                    if (lower.endsWith('.gma') && !lower.endsWith('.disabled') && !noMountSet.has(item.name)) {
+                        installedWorkshopIds.add(item.name);
+                        if (h) installedGmaHeaders.push(h);
+                    }
                 }
             }
         }
@@ -251,8 +283,8 @@ async function runDiagnostics(gmodInfo) {
             hasCss = true;
             cssSource = 'Local CS:S Addon Pack (garrysmod/addons)';
         } else {
-            // Check installed workshop headers for known CS:S packs
-            for (const h of installedGmaHeaders) {
+            // Check subscribed workshop headers for known CS:S packs
+            for (const h of allSubscribedHeaders) {
                 const nameLower = h.name.toLowerCase();
                 if (
                     h.workshopId === '3540392343' ||
@@ -265,6 +297,11 @@ async function runDiagnostics(gmodInfo) {
                 ) {
                     hasCss = true;
                     cssSource = `Workshop Pack: ${h.name}`;
+                    if (noMountSet.has(h.workshopId)) {
+                        noMountSet.delete(h.workshopId);
+                        installedWorkshopIds.add(h.workshopId);
+                        noMountDirty = true;
+                    }
                     break;
                 }
             }
@@ -323,13 +360,22 @@ async function runDiagnostics(gmodInfo) {
         } catch (_) {}
     }
 
-    // Evaluate missing vs installed bases
+    // Evaluate missing vs installed bases (auto-mount already-subscribed bases if needed by active addons!)
     let missingBasesCount = 0;
     for (const [baseKey, usingAddons] of Object.entries(baseUsage)) {
         const baseDef = KNOWN_BASES[baseKey];
         if (!baseDef) continue;
 
-        const isBaseInstalled = installedWorkshopIds.has(baseDef.workshopId) ||
+        const isAlreadySubscribed = subscribedWorkshopIds.has(baseDef.workshopId) ||
+            allSubscribedHeaders.some(h => h.name.toLowerCase().includes(baseDef.name.toLowerCase()));
+
+        if (isAlreadySubscribed && !installedWorkshopIds.has(baseDef.workshopId)) {
+            noMountSet.delete(baseDef.workshopId);
+            installedWorkshopIds.add(baseDef.workshopId);
+            noMountDirty = true;
+        }
+
+        const isBaseInstalled = isAlreadySubscribed || installedWorkshopIds.has(baseDef.workshopId) ||
             installedGmaHeaders.some(h => h.name.toLowerCase().includes(baseDef.name.toLowerCase()));
         if (!isBaseInstalled) {
             missingBasesCount++;
@@ -349,6 +395,10 @@ async function runDiagnostics(gmodInfo) {
                 webUrl: `https://steamcommunity.com/sharedfiles/filedetails/?id=${baseDef.workshopId}`
             });
         }
+    }
+
+    if (noMountDirty) {
+        writeAddonNoMount(gmodInfo, Array.from(noMountSet));
     }
 
     // 4. Detect duplicate / colliding addon packs
@@ -527,11 +577,11 @@ async function runDiagnostics(gmodInfo) {
         });
     }
 
-    // Check active bases
+    // Check active / subscribed bases
     for (const [baseKey, baseDef] of Object.entries(KNOWN_BASES)) {
-        if (installedWorkshopIds.has(baseDef.workshopId)) {
+        if (installedWorkshopIds.has(baseDef.workshopId) || subscribedWorkshopIds.has(baseDef.workshopId)) {
             const uninstalledPacks = (baseDef.recommendedPacks || []).filter(
-                p => !installedWorkshopIds.has(p.workshopId)
+                p => !subscribedWorkshopIds.has(p.workshopId) && !installedWorkshopIds.has(p.workshopId)
             );
             resolved.push({
                 key: `base_${baseKey}`,

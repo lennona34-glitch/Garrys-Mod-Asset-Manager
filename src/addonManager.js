@@ -2,6 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const { parseGmaHeader, extractWithGmad, createWithGmad } = require('./gmaParser');
 
+// Permanently banned / deleted intrusive addons ("The Broken End [nextbot] (REMIX)" 3819314523 & "TBS Entity Base" 3732561347)
+const PERMANENTLY_BANNED_WORKSHOP_IDS = new Set(['3819314523', '3732561347']);
+// Redundant duplicate/crash packs kept unmounted during bulk "Enable" operations
+const CONFLICT_REDUNDANT_WORKSHOP_IDS = new Set(['2957323514', '2988753442', '2995239904', '3483718453', '3727245204']);
+// Essential texture/base content kept mounted during bulk "Disable" operations
+const ESSENTIAL_MOUNTED_WORKSHOP_IDS = new Set(['3540392343', '3414484452', '3066445274']);
+
 /**
  * Scan all installed addons (Workshop + Local)
  */
@@ -10,13 +17,32 @@ async function scanAllAddons(gmodInfo) {
     if (!gmodInfo) return addons;
 
     let noMountSet = new Set();
+    let noMountPath = null;
     if (gmodInfo.garrysmodDir) {
-        const noMountPath = path.join(gmodInfo.garrysmodDir, 'cfg', 'addonnomount.txt');
+        noMountPath = path.join(gmodInfo.garrysmodDir, 'cfg', 'addonnomount.txt');
         if (fs.existsSync(noMountPath)) {
             try {
                 const content = fs.readFileSync(noMountPath, 'utf8');
                 const matches = [...content.matchAll(/"\d+"\s+"([^"]+)"/g)];
                 noMountSet = new Set(matches.map(m => m[1]));
+            } catch (_) {}
+        }
+        // Always ensure banned addons are in addonnomount.txt
+        let bannedAdded = false;
+        for (const bannedId of PERMANENTLY_BANNED_WORKSHOP_IDS) {
+            if (!noMountSet.has(bannedId)) {
+                noMountSet.add(bannedId);
+                bannedAdded = true;
+            }
+        }
+        if (bannedAdded && noMountPath) {
+            try {
+                const ids = [...noMountSet];
+                let out = '"addonnomount"\n{\n';
+                ids.forEach((id, idx) => { out += `\t"${idx + 1}"\t\t"${id}"\n`; });
+                out += '}\n';
+                fs.mkdirSync(path.dirname(noMountPath), { recursive: true });
+                fs.writeFileSync(noMountPath, out, 'utf8');
             } catch (_) {}
         }
     }
@@ -28,6 +54,15 @@ async function scanAllAddons(gmodInfo) {
             for (const itemFolder of itemFolders) {
                 if (!itemFolder.isDirectory()) continue;
                 const folderPath = path.join(gmodInfo.workshopDir, itemFolder.name);
+
+                // Permanently purge "The Broken End" (3819314523) & "TBS Entity Base" (3732561347) if present on disk
+                if (PERMANENTLY_BANNED_WORKSHOP_IDS.has(itemFolder.name)) {
+                    try {
+                        fs.rmSync(folderPath, { recursive: true, force: true });
+                    } catch (_) {}
+                    continue;
+                }
+
                 const files = fs.readdirSync(folderPath);
 
                 for (const file of files) {
@@ -376,9 +411,26 @@ function bulkToggleAddonStates(addonFilePaths, enable, gmodInfo = null) {
         const isWorkshopItem = /^\d+$/.test(parentDir);
 
         if (isWorkshopItem && noMountPath) {
+            if (PERMANENTLY_BANNED_WORKSHOP_IDS.has(parentDir)) {
+                noMountSet.add(parentDir);
+                workshopChanged = true;
+                continue;
+            }
             if (enable) {
+                // Do not bulk-enable known redundant duplicate / crash-conflicting packs
+                if (CONFLICT_REDUNDANT_WORKSHOP_IDS.has(parentDir)) {
+                    noMountSet.add(parentDir);
+                    workshopChanged = true;
+                    continue;
+                }
                 noMountSet.delete(parentDir);
             } else {
+                // Keep essential CS:S texture fixes mounted even during bulk disable
+                if (ESSENTIAL_MOUNTED_WORKSHOP_IDS.has(parentDir)) {
+                    noMountSet.delete(parentDir);
+                    workshopChanged = true;
+                    continue;
+                }
                 noMountSet.add(parentDir);
             }
             workshopChanged = true;

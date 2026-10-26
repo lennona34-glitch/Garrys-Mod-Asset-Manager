@@ -1638,6 +1638,10 @@ local function SuppressTopLeftErrorPopups()
         hook.Remove("OnLuaError", "MenuErrorHandler")
         hook.Remove("OnProblemReceived", "FireProblemNotification")
     end
+    if steamworks and steamworks.SetShouldMountAddon then
+        pcall(steamworks.SetShouldMountAddon, "3819314523", false) -- The Broken End [nextbot] (REMIX)
+        pcall(steamworks.SetShouldMountAddon, "3732561347", false) -- TBS Entity Base
+    end
 end
 SuppressTopLeftErrorPopups()
 
@@ -1758,6 +1762,7 @@ timer.Create("GModManager_MenuStateCouchKeeper", 1.0, 0, EnforceCouchMenuAndLanS
         const qmenuCfgBlock = `// --- Couch Q-Menu Zoom & Fullscreen Spawnmenu ---
 developer "0"
 con_notifytime "0"
+gsn_auto_spawn_enabled "0"
 spawnmenu_border "0.015"
 spawnmenu_toggle "${toggleMode ? '1' : '0'}"
 gmod_qmenu_zoom "${cleanScale.toFixed(2)}"
