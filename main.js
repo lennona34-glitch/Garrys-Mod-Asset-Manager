@@ -1726,8 +1726,6 @@ local function EnforceCouchMenuAndLanState()
                 SuppressTopLeftErrorPopups()
                 ApplyMenuStateCouchFonts()
                 RunConsoleCommand("spawnmenu_border", "0.015")
-                RunConsoleCommand("lua_openscript_cl", "autorun/client/zz_qmenu_couch_zoom.lua")
-                RunConsoleCommand("lua_openscript_cl", "autorun/zz_voicemod_lan_voice.lua")
             end)
         end
     elseif not inGameNow then
@@ -1763,6 +1761,8 @@ timer.Create("GModManager_MenuStateCouchKeeper", 1.0, 0, EnforceCouchMenuAndLanS
 developer "0"
 con_notifytime "0"
 gsn_auto_spawn_enabled "0"
+cd_enabled "0"
+cd_horror "0"
 spawnmenu_border "0.015"
 spawnmenu_toggle "${toggleMode ? '1' : '0'}"
 gmod_qmenu_zoom "${cleanScale.toFixed(2)}"

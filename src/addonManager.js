@@ -4,10 +4,10 @@ const { parseGmaHeader, extractWithGmad, createWithGmad } = require('./gmaParser
 
 // Permanently banned / deleted intrusive addons ("The Broken End [nextbot] (REMIX)" 3819314523 & "TBS Entity Base" 3732561347)
 const PERMANENTLY_BANNED_WORKSHOP_IDS = new Set(['3819314523', '3732561347']);
-// Redundant duplicate/crash packs kept unmounted during bulk "Enable" operations
-const CONFLICT_REDUNDANT_WORKSHOP_IDS = new Set(['2957323514', '2988753442', '2995239904', '3483718453', '3727245204']);
+// Redundant duplicate/crash packs & uninvited background horror directors kept unmounted during bulk "Enable" operations
+const CONFLICT_REDUNDANT_WORKSHOP_IDS = new Set(['2957323514', '2988753442', '2995239904', '3483718453', '3727245204', '3820922291']);
 // Essential texture/base content kept mounted during bulk "Disable" operations
-const ESSENTIAL_MOUNTED_WORKSHOP_IDS = new Set(['3540392343', '3414484452', '3066445274']);
+const ESSENTIAL_MOUNTED_WORKSHOP_IDS = new Set(['3540392343', '3414484452', '3066445274', '2992440811', '1560118657', '131759821', '2916561591']);
 
 /**
  * Scan all installed addons (Workshop + Local)

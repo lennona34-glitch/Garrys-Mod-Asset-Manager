@@ -168,6 +168,42 @@ const KNOWN_BASES = {
             { title: '[LVS] Spider Tank', workshopId: '3816018921', desc: 'Six-legged functional walking combat tank' },
             { title: '[LVS] Oblivion Drone', workshopId: '3813741872', desc: 'Autonomous patrol aerial vehicle' }
         ]
+    },
+    'pk_pills': {
+        name: 'Enhanced Parakeets Pill Base',
+        workshopId: '2992440811',
+        description: 'Required by all [PILL PACK] character morph addons (Caine, Spinosaurus, Giganotosaurus, Poppy Playtime, Stalker, War of the Worlds)',
+        keywords: ['pk_pills'],
+        searchQuery: 'Pill Pack',
+        searchTag: 'NPC',
+        recommendedPacks: []
+    },
+    'wos_dynabase': {
+        name: '[wOS] DynaBase',
+        workshopId: '2916561591',
+        description: 'Required by custom character animation extensions and Pill Packs (Caine, Stalker, wOS animations)',
+        keywords: ['wos/dynabase', 'wos/anim_extension', 'models/player/wiltos'],
+        searchQuery: 'DynaBase',
+        searchTag: 'Addon',
+        recommendedPacks: []
+    },
+    'drgbase': {
+        name: 'DrGBase | Nextbot Base',
+        workshopId: '1560118657',
+        description: 'Required by Nextbots (Sprunki, Bendy, Poppy Playtime, Alien Isolation, Dead as Disco, Alphabet Lore)',
+        keywords: ['drgbase_nextbot', 'drgbase'],
+        searchQuery: 'DrGBase',
+        searchTag: 'NPC',
+        recommendedPacks: []
+    },
+    'glide': {
+        name: "Glide // Styled's Vehicle Base",
+        workshopId: '3389728250',
+        description: 'Required by Glide vehicles (Batmobile, Goblin Glider, Liberty City vehicles)',
+        keywords: ['base_glide', 'glide_'],
+        searchQuery: 'Glide',
+        searchTag: 'Vehicle',
+        recommendedPacks: []
     }
 };
 
@@ -185,11 +221,12 @@ async function runDiagnostics(gmodInfo) {
 
     // 1. Scan installed addons to identify both ALL subscribed workshop items on disk AND active mounted items
     const bannedIds = new Set(['3819314523', '3732561347']); // The Broken End & TBS Entity Base
+    const autoUnmountIds = new Set(['3820922291']); // CARTOON DWELLER {HORROR} background horror auto-spawner
     const noMountIds = readAddonNoMount(gmodInfo);
     const noMountSet = new Set(noMountIds);
     let noMountDirty = false;
 
-    for (const bId of bannedIds) {
+    for (const bId of [...bannedIds, ...autoUnmountIds]) {
         if (!noMountSet.has(bId)) {
             noMountSet.add(bId);
             noMountDirty = true;
@@ -329,8 +366,9 @@ async function runDiagnostics(gmodInfo) {
         });
     }
 
-    // 3. Check which base frameworks are referenced in Lua files
+    // 3. Check which base frameworks AND companion .mdl model packs are referenced in Lua files
     const baseUsage = {};
+    const referencedModels = new Map(); // modelPath -> Set of addon names
     for (const h of installedGmaHeaders) {
         const luaFiles = h.files.filter(f => f.name.toLowerCase().endsWith('.lua') && f.size < 400000);
         if (luaFiles.length === 0) continue;
@@ -355,6 +393,14 @@ async function runDiagnostics(gmodInfo) {
                         });
                     }
                 }
+
+                const mdlMatches = code.match(/models\/[a-z0-9_/\-.]+\.mdl/g);
+                if (mdlMatches) {
+                    for (const mdl of mdlMatches) {
+                        if (!referencedModels.has(mdl)) referencedModels.set(mdl, new Set());
+                        referencedModels.get(mdl).add(h.name);
+                    }
+                }
             }
             fs.closeSync(fd);
         } catch (_) {}
@@ -373,6 +419,17 @@ async function runDiagnostics(gmodInfo) {
             noMountSet.delete(baseDef.workshopId);
             installedWorkshopIds.add(baseDef.workshopId);
             noMountDirty = true;
+        }
+
+        // If wOS DynaBase is required, also auto-mount subscribed wOS companion animation extension packs
+        if (baseKey === 'wos_dynabase' && isAlreadySubscribed) {
+            for (const wosCompanionId of ['2917050373', '2919093249']) {
+                if (subscribedWorkshopIds.has(wosCompanionId) && !installedWorkshopIds.has(wosCompanionId)) {
+                    noMountSet.delete(wosCompanionId);
+                    installedWorkshopIds.add(wosCompanionId);
+                    noMountDirty = true;
+                }
+            }
         }
 
         const isBaseInstalled = isAlreadySubscribed || installedWorkshopIds.has(baseDef.workshopId) ||
@@ -394,6 +451,43 @@ async function runDiagnostics(gmodInfo) {
                 steamUrl: `steam://url/CommunityFilePage/${baseDef.workshopId}`,
                 webUrl: `https://steamcommunity.com/sharedfiles/filedetails/?id=${baseDef.workshopId}`
             });
+        }
+    }
+
+    // 3b. Auto-mount subscribed Companion Model Packs (.mdl) required by enabled NPCs/Pills/Weapons
+    const excludedCompanionIds = new Set(['3819314523', '3732561347', '2957323514', '2988753442', '2995239904', '3483718453', '3727245204', '3820922291']);
+    const mountedModelsSet = new Set();
+    for (const h of installedGmaHeaders) {
+        for (const f of h.files) {
+            const lower = f.name.toLowerCase();
+            if (lower.endsWith('.mdl')) mountedModelsSet.add(lower);
+        }
+    }
+
+    const unmountedModelProviders = new Map(); // mdl -> header
+    for (const h of allSubscribedHeaders) {
+        if (installedWorkshopIds.has(h.workshopId) || excludedCompanionIds.has(h.workshopId)) continue;
+        for (const f of h.files) {
+            const lower = f.name.toLowerCase();
+            if (lower.endsWith('.mdl') && !mountedModelsSet.has(lower) && !unmountedModelProviders.has(lower)) {
+                unmountedModelProviders.set(lower, h);
+            }
+        }
+    }
+
+    const autoMountedCompanionPacks = new Map(); // workshopId -> name
+    for (const [mdl] of referencedModels) {
+        if (mountedModelsSet.has(mdl)) continue;
+        const provider = unmountedModelProviders.get(mdl);
+        if (provider) {
+            noMountSet.delete(provider.workshopId);
+            installedWorkshopIds.add(provider.workshopId);
+            autoMountedCompanionPacks.set(provider.workshopId, provider.name);
+            noMountDirty = true;
+            for (const f of provider.files) {
+                const lower = f.name.toLowerCase();
+                if (lower.endsWith('.mdl')) mountedModelsSet.add(lower);
+            }
         }
     }
 
@@ -596,17 +690,13 @@ async function runDiagnostics(gmodInfo) {
         }
     }
 
-    // Check DrGBase
-    if (installedWorkshopIds.has('1560118657')) {
-        resolved.push({
-            key: 'drgbase',
-            title: 'DrGBase | Nextbot Base: Active & Healthy',
-            detail: 'DrGBase is active and powering your Nextbots (Sprunki, Bendy, Alphabet Lore, Nextbots).',
-            isBase: true,
-            workshopId: '1560118657',
-            recommendedPacks: []
-        });
-    }
+    // Companion 3D Model & Animation Packs status
+    resolved.push({
+        key: 'companion_model_packs',
+        title: 'Companion 3D Model & Animation Packs: Active & Mounted',
+        detail: 'Required companion model/animation packs (SmackDown vs. Raw 2007 Player Models, wOS DynaBase Animation Extensions, Div Foliage & Props) are automatically mounted alongside your active NPCs & Pill Packs to prevent red 3D ERROR graphics.',
+        isHealthy: true
+    });
 
     // Check Wireless Controller / Gamepad Tuning
     if (gmodInfo && gmodInfo.garrysmodDir) {
